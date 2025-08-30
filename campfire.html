@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Grass Field with Campfire</title>
+    <title>Campfire Scene</title>
     <style>
       body {
         margin: 0;
@@ -55,6 +55,14 @@
         margin-bottom: 5px;
       }
       
+      .control-group input[type="color"] {
+        width: 50px;
+        height: 30px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      
       .value-display {
         font-size: 12px;
         color: #ccc;
@@ -76,7 +84,7 @@
   <body>
     <div id="app">
       <canvas id="three-canvas"></canvas>
-      <!-- <div id="controls">
+      <div id="controls">
         <h3>🔥 Main Flame Controls</h3>
         
         <div class="control-group">
@@ -117,20 +125,6 @@
           <div class="value-display" id="innerVoronoiSpeedValue">0.6</div>
         </div>
 
-        <h3>🎨 Toon Shader Controls</h3>
-        
-        <div class="control-group">
-          <label for="toonLevels">Toon Levels</label>
-          <input type="range" id="toonLevels" min="2" max="8" step="1" value="4">
-          <div class="value-display" id="toonLevelsValue">4</div>
-        </div>
-        
-        <div class="control-group">
-          <label for="ambientStrength">Ambient Strength</label>
-          <input type="range" id="ambientStrength" min="0" max="1" step="0.1" value="0.3">
-          <div class="value-display" id="ambientStrengthValue">0.3</div>
-        </div>
-
         <h3>✨ HDR Bloom Controls</h3>
         
         <div class="control-group">
@@ -150,8 +144,30 @@
           <input type="range" id="exposure" min="0.1" max="3" step="0.1" value="1.0">
           <div class="value-display" id="exposureValue">1.0</div>
         </div>
-      </div> -->
+
+        <h3>🎨 Toon Shader Controls</h3>
+        
+        <div class="control-group">
+          <label for="toonLevels">Toon Levels</label>
+          <input type="range" id="toonLevels" min="2" max="8" step="1" value="4">
+          <div class="value-display" id="toonLevelsValue">4</div>
+        </div>
+        
+        <div class="control-group">
+          <label for="ambientStrength">Ambient Strength</label>
+          <input type="range" id="ambientStrength" min="0" max="1" step="0.1" value="0.3">
+          <div class="value-display" id="ambientStrengthValue">0.3</div>
+        </div>
+
+        <h3>🏕️ Scene Controls</h3>
+        
+        <div class="control-group">
+          <label for="cameraDistance">Camera Distance</label>
+          <input type="range" id="cameraDistance" min="1" max="10" step="0.1" value="3">
+          <div class="value-display" id="cameraDistanceValue">3</div>
+        </div>
+      </div>
     </div>
-    <script type="module" src="/src/main.ts"></script>
+    <script type="module" src="/src/campfire.ts"></script>
   </body>
 </html>

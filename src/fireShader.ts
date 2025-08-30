@@ -4,92 +4,20 @@ import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
-import { unityVoronoiNoise, unitySimpleNoise } from './unityNoiseFunctions';
+import { createFireSystem } from './fireSystem';
+import type { FireSystem } from './fireSystem';
 
-// Simple Fire Shader with Texture
-const fireVertexShader = `
-  varying vec2 vUv;
-  
-  void main() {
-    vUv = uv;
-    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
-  }
-`;
 
-const fireFragmentShader = `
-  uniform float uTime;
-  uniform float uIntensity;
-  uniform float uSpeed;
-  uniform sampler2D fire;
-  uniform vec4 uColor;
-  uniform float bloom;
-  uniform float flameStart;
-  
-  varying vec2 vUv;
-  
-  ${unityVoronoiNoise}
-  
-  ${unitySimpleNoise}
-  
-  void main() {
-    // Add upward movement with speed control (negative vUv makes it go upward)
-    vec2 st = -vUv;
-    st.y += uTime * uSpeed; // Move pattern upward
-    
-    // Generate Unity Voronoi noise with density 10 and time as angle offset
-    float voronoiOut, voronoiCells;
-    Unity_Voronoi_float(st, uTime + 10.0, 10.0, voronoiOut, voronoiCells);
-    
-    // Generate Unity Simple Noise with scale of 50 (no time)
-    float simpleNoise = Unity_SimpleNoise_float(vUv, 50.0);
-    
-    // Multiply Voronoi with Unity Simple Noise
-    float combinedNoise = voronoiOut * simpleNoise;
-    
-    // White background with black cells
-    
-    vec3 cellColor = vec3(0.0); // Black
-    
-    // Mix between white and black based on combined noise
-    vec3 noiseFinal = mix(cellColor, vec3(1.0, 1.0, 1.0), combinedNoise);
-    
-    // Apply intensity
-    noiseFinal *= uIntensity;
-
-    float g = 1. - vUv.y;
-    g = pow(g, 0.3);
-    vec4 fireShape = texture2D(fire, vUv);
-    g = (fireShape.x) * g;
-
-    float edge = smoothstep(0.0, flameStart, vUv.y);
-    noiseFinal = mix(vec3(1.0), noiseFinal, edge);
-
-    float cappedNoise = min(noiseFinal.x, 1.0) * 0.9;
-    float fireWithNoise = cappedNoise + g;
-    fireWithNoise = step(1.0, fireWithNoise);
-
-    float glow = 4.0;
-    vec4 bloomColor = vec4(vec3(1.0, 1.0, 1.0) * glow, 1.0);
-    bloomColor *= uColor;
-
-    vec4 finalColor = uColor * fireWithNoise;
-    
-    gl_FragColor = vec4(finalColor.xyz * bloom, finalColor.a);
-  }
-`;
 
 // Global variables
 let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
 let renderer: THREE.WebGLRenderer;
-let fireOuterMaterial: THREE.ShaderMaterial;
-let fireInnerMaterial: THREE.ShaderMaterial;
 let clock: THREE.Clock;
 let composer: EffectComposer;
 let bloomPass: UnrealBloomPass;
-let fireOuter: THREE.Mesh;
-let fireInner: THREE.Mesh;
 let controls: OrbitControls;
+let fireSystem: FireSystem;
 
 function initScene() {
   // Scene setup
@@ -113,57 +41,29 @@ function initScene() {
   renderer.toneMappingExposure = 1.0;
   renderer.outputColorSpace = THREE.SRGBColorSpace;
 
-  const fireTexture = new THREE.TextureLoader().load('/fire/fire2.png');
+  // Create fire system using the reusable function
+  const fireConfig = {
+    mainFlame: {
+      size: { width: 1.0, height: 1.5 },
+      position: { x: 0, y: 0, z: 0 },
+      intensity: 1.3,
+      speed: 0.4,
+      flameStart: 0.4,
+      color: { r: 1.0, g: 0.25, b: 0.0, a: 1.0 },
+      bloom: 15.0
+    },
+    innerFlame: {
+      size: { width: 0.55, height: 0.7 },
+      position: { x: 0.0, y: -0.29, z: 0.0 },
+      intensity: 1.0,
+      speed: 0.6,
+      flameStart: 0.32,
+      color: { r: 1.0, g: 1.0, b: 1.0, a: 1.0 },
+      bloom: 15.0
+    }
+  };
   
-  // Create material for outer fire with Voronoi noise
-  fireOuterMaterial = new THREE.ShaderMaterial({
-    vertexShader: fireVertexShader,
-    fragmentShader: fireFragmentShader,
-    uniforms: {
-      uTime: { value: 0 },
-      uIntensity: { value: 1.3 },
-      uSpeed: { value: 0.4 },
-      fire: { value: fireTexture },
-      uColor: { value: new THREE.Vector4(1.0, .0, .0, 1.0) },
-      bloom: { value: 15.0 },
-      flameStart: { value: 0.4 }
-    },
-    side: THREE.DoubleSide,
-    transparent: true,
-    alphaTest: 0.001,
-    blending: THREE.NormalBlending
-  });
-
-  // Create material for inner fire with same shader
-  fireInnerMaterial = new THREE.ShaderMaterial({
-    vertexShader: fireVertexShader,
-    fragmentShader: fireFragmentShader,
-    uniforms: {
-      uTime: { value: 0 },
-      uIntensity: { value: 1.0 },
-      uSpeed: { value: 0.6 },
-      fire: { value: fireTexture },
-      uColor: { value: new THREE.Vector4(1.0, 1.0, 1.0, 1.0) },
-      bloom: { value: 15.0 },
-      flameStart: { value: 0.32 }
-    },
-    side: THREE.DoubleSide,
-    transparent: true,
-    alphaTest: 0.001,
-    blending: THREE.NormalBlending
-  });
-
-  // Create fire outer plane (larger)
-  const fireOuterGeometry = new THREE.PlaneGeometry(1.0, 1.5);
-  fireOuter = new THREE.Mesh(fireOuterGeometry, fireOuterMaterial);
-  fireOuter.position.set(0, 0, 0);
-  scene.add(fireOuter);
-
-  // Create fire inner plane (smaller, positioned forward)
-  const fireInnerGeometry = new THREE.PlaneGeometry(0.55, 0.7);
-  fireInner = new THREE.Mesh(fireInnerGeometry, fireInnerMaterial);
-  fireInner.position.set(0.0, -0.29, 0.0); // Offset to the right and up, slightly forward
-  scene.add(fireInner);
+  fireSystem = createFireSystem(scene, fireConfig);
 
   // Add orbit controls for debugging
   controls = new OrbitControls(camera, renderer.domElement);
@@ -171,8 +71,7 @@ function initScene() {
   controls.dampingFactor = 0.05;
 
   // Debug logging
-  console.log('Fire Outer position:', fireOuter.position);
-  console.log('Fire Inner position:', fireInner.position);
+  console.log('Fire system created successfully');
   console.log('Camera position:', camera.position);
 
 
@@ -212,7 +111,7 @@ function setupControls() {
   const outerFlameStartValue = document.getElementById('outerFlameStartValue') as HTMLElement;
   outerFlameStartSlider.addEventListener('input', (e) => {
     const value = parseFloat((e.target as HTMLInputElement).value);
-    fireOuterMaterial.uniforms.flameStart.value = value;
+    fireSystem.mainMaterial.uniforms.flameStart.value = value;
     outerFlameStartValue.textContent = value.toString();
   });
 
@@ -221,7 +120,7 @@ function setupControls() {
   const outerFireIntensityValue = document.getElementById('outerFireIntensityValue') as HTMLElement;
   outerFireIntensitySlider.addEventListener('input', (e) => {
     const value = parseFloat((e.target as HTMLInputElement).value);
-    fireOuterMaterial.uniforms.uIntensity.value = value;
+    fireSystem.mainMaterial.uniforms.uIntensity.value = value;
     outerFireIntensityValue.textContent = value.toString();
   });
 
@@ -230,7 +129,7 @@ function setupControls() {
   const outerVoronoiSpeedValue = document.getElementById('outerVoronoiSpeedValue') as HTMLElement;
   outerVoronoiSpeedSlider.addEventListener('input', (e) => {
     const value = parseFloat((e.target as HTMLInputElement).value);
-    fireOuterMaterial.uniforms.uSpeed.value = value;
+    fireSystem.mainMaterial.uniforms.uSpeed.value = value;
     outerVoronoiSpeedValue.textContent = value.toString();
   });
 
@@ -240,7 +139,7 @@ function setupControls() {
   const innerFlameStartValue = document.getElementById('innerFlameStartValue') as HTMLElement;
   innerFlameStartSlider.addEventListener('input', (e) => {
     const value = parseFloat((e.target as HTMLInputElement).value);
-    fireInnerMaterial.uniforms.flameStart.value = value;
+    fireSystem.innerMaterial.uniforms.flameStart.value = value;
     innerFlameStartValue.textContent = value.toString();
   });
 
@@ -249,7 +148,7 @@ function setupControls() {
   const innerFireIntensityValue = document.getElementById('innerFireIntensityValue') as HTMLElement;
   innerFireIntensitySlider.addEventListener('input', (e) => {
     const value = parseFloat((e.target as HTMLInputElement).value);
-    fireInnerMaterial.uniforms.uIntensity.value = value;
+    fireSystem.innerMaterial.uniforms.uIntensity.value = value;
     innerFireIntensityValue.textContent = value.toString();
   });
 
@@ -258,7 +157,7 @@ function setupControls() {
   const innerVoronoiSpeedValue = document.getElementById('innerVoronoiSpeedValue') as HTMLElement;
   innerVoronoiSpeedSlider.addEventListener('input', (e) => {
     const value = parseFloat((e.target as HTMLInputElement).value);
-    fireInnerMaterial.uniforms.uSpeed.value = value;
+    fireSystem.innerMaterial.uniforms.uSpeed.value = value;
     innerVoronoiSpeedValue.textContent = value.toString();
   });
 
@@ -305,11 +204,10 @@ function animate() {
     controls.update();
   }
 
-  // Update time uniform for animation
-  if (fireOuterMaterial && fireInnerMaterial) {
+  // Update fire system
+  if (fireSystem) {
     const time = clock.getElapsedTime();
-    fireOuterMaterial.uniforms.uTime.value = time;
-    fireInnerMaterial.uniforms.uTime.value = time;
+    fireSystem.update(time);
   }
 
   // Render with post-processing

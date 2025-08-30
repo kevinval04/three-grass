@@ -44,7 +44,7 @@ export function createSceneSetup(canvas: HTMLCanvasElement): SceneSetup {
   controls.dampingFactor = 0.05;
 
   // Camera position - lowered for better view
-  camera.position.set(5, 3, 5);
+  camera.position.set(4, 3, 6);
   camera.lookAt(0, 0, 0);
 
   return { scene, camera, renderer, controls };
@@ -55,7 +55,7 @@ export function setupLighting(scene: THREE.Scene): void {
   const ambientLight = new THREE.AmbientLight(0x404040, 1.5); // Increased for better visibility
   scene.add(ambientLight);
 
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0); // Reduced from 2.0
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0); // Reduced from 2.0
   directionalLight.position.set(5, 15, 15); // Moved to front and lower
   directionalLight.castShadow = true;
   directionalLight.shadow.mapSize.width = 2048;
