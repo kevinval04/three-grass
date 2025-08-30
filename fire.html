@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fire Shader Playground</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 0;
+        background: #000;
+        font-family: Arial, sans-serif;
+      }
+      
+      #app {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+      
+      #three-canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+      
+      #controls {
+        position: absolute;
+        top: 20px;
+        left: 20px;
+        background: rgba(0, 0, 0, 0.7);
+        padding: 20px;
+        border-radius: 10px;
+        color: white;
+        min-width: 250px;
+        z-index: 100;
+      }
+      
+      .control-group {
+        margin-bottom: 15px;
+      }
+      
+      .control-group label {
+        display: block;
+        margin-bottom: 5px;
+        font-size: 14px;
+      }
+      
+      .control-group input[type="range"] {
+        width: 100%;
+        margin-bottom: 5px;
+      }
+      
+      .control-group input[type="color"] {
+        width: 50px;
+        height: 30px;
+        border: none;
+        border-radius: 5px;
+        cursor: pointer;
+      }
+      
+      .value-display {
+        font-size: 12px;
+        color: #ccc;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="three-canvas"></canvas>
+      <div id="controls">
+        <h3>Outer Flame Controls</h3>
+        
+        <div class="control-group">
+          <label for="outerFlameStart">Outer Flame Start</label>
+          <input type="range" id="outerFlameStart" min="0" max="1" step="0.01" value="0.28">
+          <div class="value-display" id="outerFlameStartValue">0.28</div>
+        </div>
+        
+        <div class="control-group">
+          <label for="outerFireIntensity">Outer Fire Intensity</label>
+          <input type="range" id="outerFireIntensity" min="0" max="2" step="0.1" value="1.0">
+          <div class="value-display" id="outerFireIntensityValue">1.0</div>
+        </div>
+        
+        <div class="control-group">
+          <label for="outerVoronoiSpeed">Outer Fire Speed</label>
+          <input type="range" id="outerVoronoiSpeed" min="0" max="5" step="0.1" value="0.8">
+          <div class="value-display" id="outerVoronoiSpeedValue">0.8</div>
+        </div>
+
+        <h3>Inner Flame Controls</h3>
+        
+        <div class="control-group">
+          <label for="innerFlameStart">Inner Flame Start</label>
+          <input type="range" id="innerFlameStart" min="0" max="1" step="0.01" value="0.28">
+          <div class="value-display" id="innerFlameStartValue">0.28</div>
+        </div>
+        
+        <div class="control-group">
+          <label for="innerFireIntensity">Inner Fire Intensity</label>
+          <input type="range" id="innerFireIntensity" min="0" max="2" step="0.1" value="1.0">
+          <div class="value-display" id="innerFireIntensityValue">1.0</div>
+        </div>
+        
+        <div class="control-group">
+          <label for="innerVoronoiSpeed">Inner Fire Speed</label>
+          <input type="range" id="innerVoronoiSpeed" min="0" max="5" step="0.1" value="0.8">
+          <div class="value-display" id="innerVoronoiSpeedValue">0.8</div>
+        </div>
+
+        <h3>HDR Bloom Controls</h3>
+        
+        <div class="control-group">
+          <label for="bloomStrength">Bloom Strength</label>
+          <input type="range" id="bloomStrength" min="0.01" max="0.1" step="0.005" value="0.07">
+          <div class="value-display" id="bloomStrengthValue">0.07</div>
+        </div>
+        
+        <div class="control-group">
+          <label for="bloomThreshold">Bloom Threshold</label>
+          <input type="range" id="bloomThreshold" min="0" max="2" step="0.05" value="0.85">
+          <div class="value-display" id="bloomThresholdValue">0.85</div>
+        </div>
+        
+        <div class="control-group">
+          <label for="exposure">HDR Exposure</label>
+          <input type="range" id="exposure" min="0.1" max="3" step="0.1" value="1.0">
+          <div class="value-display" id="exposureValue">1.0</div>
+        </div>
+      </div>
+    </div>
+    <script type="module" src="/src/fireShader.ts"></script>
+  </body>
+</html>

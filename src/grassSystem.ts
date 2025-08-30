@@ -2,49 +2,148 @@ import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshSurfaceSampler } from "three/addons/math/MeshSurfaceSampler.js";
 
-// Constants
-export const MAP_SIZE = 3;
-export const PLANE_SIZE = 30 * MAP_SIZE;
-export const GRASS_DENSITY = 10; // Grass instances per unit area
+export const GRASS_DENSITY = 12;
 
 export interface GrassSystem {
-  plane: THREE.Mesh;
+  plane: THREE.Mesh | null;
   grassMaterial: THREE.ShaderMaterial;
   updateWind: (time: number) => void;
+  setWindParameters: (params: {
+    strength?: number;
+    direction?: THREE.Vector2;
+    noiseScale?: number;
+    frequency?: number;
+    turbulence?: number;
+  }) => void;
 }
 
-// Create custom grass shader material
-function createGrassShaderMaterial(grassTexture: THREE.Texture): THREE.ShaderMaterial {
+function createGrassShaderMaterial(
+  grassTexture: THREE.Texture,
+  planeSize: number,
+  textureRepeat: THREE.Vector2
+): THREE.ShaderMaterial {
   const vertexShader = `
     uniform float time;
     uniform float windStrength;
     uniform vec2 windDirection;
+    uniform float noiseScale;
+    uniform float windFrequency;
+    uniform float turbulence;
     
     varying vec3 vNormal;
     varying vec3 vPosition;
     varying vec2 vUv;
     varying vec3 vWorldPosition;
     
+    // 3D Simplex noise function
+    vec3 mod289(vec3 x) {
+      return x - floor(x * (1.0 / 289.0)) * 289.0;
+    }
+    
+    vec4 mod289(vec4 x) {
+      return x - floor(x * (1.0 / 289.0)) * 289.0;
+    }
+    
+    vec4 permute(vec4 x) {
+      return mod289(((x*34.0)+1.0)*x);
+    }
+    
+    vec4 taylorInvSqrt(vec4 r) {
+      return 1.79284291400159 - 0.85373472095314 * r;
+    }
+    
+    float snoise(vec3 v) {
+      const vec2 C = vec2(1.0/6.0, 1.0/3.0);
+      const vec4 D = vec4(0.0, 0.5, 1.0, 2.0);
+      
+      vec3 i = floor(v + dot(v, C.yyy));
+      vec3 x0 = v - i + dot(i, C.xxx);
+      
+      vec3 g = step(x0.yzx, x0.xyz);
+      vec3 l = 1.0 - g;
+      vec3 i1 = min(g.xyz, l.zxy);
+      vec3 i2 = max(g.xyz, l.zxy);
+      
+      vec3 x1 = x0 - i1 + C.xxx;
+      vec3 x2 = x0 - i2 + C.yyy;
+      vec3 x3 = x0 - D.yyy;
+      
+      i = mod289(i);
+      vec4 p = permute(permute(permute(
+                 i.z + vec4(0.0, i1.z, i2.z, 1.0))
+               + i.y + vec4(0.0, i1.y, i2.y, 1.0))
+               + i.x + vec4(0.0, i1.x, i2.x, 1.0));
+      
+      float n_ = 0.142857142857;
+      vec3 ns = n_ * D.wyz - D.xzx;
+      
+      vec4 j = p - 49.0 * floor(p * ns.z * ns.z);
+      
+      vec4 x_ = floor(j * ns.z);
+      vec4 y_ = floor(j - 7.0 * x_);
+      
+      vec4 x = x_ *ns.x + ns.yyyy;
+      vec4 y = y_ *ns.x + ns.yyyy;
+      vec4 h = 1.0 - abs(x) - abs(y);
+      
+      vec4 b0 = vec4(x.xy, y.xy);
+      vec4 b1 = vec4(x.zw, y.zw);
+      
+      vec4 s0 = floor(b0) * 2.0 + 1.0;
+      vec4 s1 = floor(b1) * 2.0 + 1.0;
+      vec4 sh = -step(h, vec4(0.0));
+      
+      vec4 a0 = b0.xzyw + s0.xzyw * sh.xxyy;
+      vec4 a1 = b1.xzyw + s1.xzyw * sh.zzww;
+      
+      vec3 p0 = vec3(a0.xy, h.x);
+      vec3 p1 = vec3(a0.zw, h.y);
+      vec3 p2 = vec3(a1.xy, h.z);
+      vec3 p3 = vec3(a1.zw, h.w);
+      
+      vec4 norm = taylorInvSqrt(vec4(dot(p0,p0), dot(p1,p1), dot(p2, p2), dot(p3,p3)));
+      p0 *= norm.x;
+      p1 *= norm.y;
+      p2 *= norm.z;
+      p3 *= norm.w;
+      
+      vec4 m = max(0.6 - vec4(dot(x0,x0), dot(x1,x1), dot(x2,x2), dot(x3,x3)), 0.0);
+      m = m * m;
+      return 42.0 * dot(m*m, vec4(dot(p0,x0), dot(p1,x1), dot(p2,x2), dot(p3,x3)));
+    }
+    
     void main() {
-      // Apply instance matrix transformation
       vec4 instancePosition = instanceMatrix * vec4(position, 1.0);
       vec4 worldPosition = modelMatrix * instancePosition;
       
-      // Calculate wind effect based on vertex height (Y position)
-      // Higher vertices (tips of grass) sway more than lower ones (base)
-      float heightFactor = max(0.0, instancePosition.y) / 2.0; // Normalize height influence
+      float heightFactor = max(0.0, instancePosition.y) / 2.0;
       
-      // Create wind wave using sine functions with different frequencies
-      float windWave1 = sin(time * 2.0 + worldPosition.x * 0.1 + worldPosition.z * 0.1) * 0.5;
-      float windWave2 = sin(time * 3.0 + worldPosition.x * 0.05 + worldPosition.z * 0.15) * 0.3;
-      float windWave3 = sin(time * 1.5 + worldPosition.x * 0.2 + worldPosition.z * 0.08) * 0.2;
+      // Create noise-based wind using multiple octaves
+      vec3 noisePos = worldPosition.xyz * noiseScale + time * windFrequency;
       
-      // Combine wind waves
-      float windEffect = (windWave1 + windWave2 + windWave3) * heightFactor * windStrength;
+      // Primary wind noise
+      float windNoise1 = snoise(noisePos) * 0.5;
       
-      // Apply wind displacement in X and Z directions
-      worldPosition.x += windDirection.x * windEffect;
-      worldPosition.z += windDirection.y * windEffect;
+      // Add turbulence with higher frequency
+      float windNoise2 = snoise(noisePos * 2.0 + vec3(100.0)) * 0.3 * turbulence;
+      float windNoise3 = snoise(noisePos * 4.0 + vec3(200.0)) * 0.2 * turbulence;
+      
+      // Combine noise layers
+      float combinedNoise = windNoise1 + windNoise2 + windNoise3;
+      
+      // Apply wind effect with height-based falloff
+      float windEffect = combinedNoise * heightFactor * windStrength;
+      
+      // Create directional wind with some perpendicular turbulence
+      vec2 windDir = normalize(windDirection);
+      vec2 perpDir = vec2(-windDir.y, windDir.x);
+      
+      // Main wind direction with some perpendicular turbulence
+      float mainWind = windEffect;
+      float turbWind = snoise(noisePos * 3.0 + vec3(300.0)) * 0.3 * turbulence * heightFactor;
+      
+      worldPosition.x += windDir.x * mainWind + perpDir.x * turbWind;
+      worldPosition.z += windDir.y * mainWind + perpDir.y * turbWind;
       
       vNormal = normalize(normalMatrix * mat3(instanceMatrix) * normal);
       vPosition = (viewMatrix * worldPosition).xyz;
@@ -53,190 +152,209 @@ function createGrassShaderMaterial(grassTexture: THREE.Texture): THREE.ShaderMat
       
       gl_Position = projectionMatrix * viewMatrix * worldPosition;
     }
-  `
-  
+  `;
+
   const fragmentShader = `
     uniform sampler2D grassTexture;
     uniform vec2 textureRepeat;
     uniform float planeSize;
-    uniform vec3 lightDirection;
-    uniform float lightIntensity;
     
     varying vec3 vNormal;
     varying vec3 vPosition;
     varying vec2 vUv;
     varying vec3 vWorldPosition;
-
-    // Function to increase saturation of an RGB color
-    vec3 saturateColor(vec3 color, float saturation) {
-      float luma = dot(color, vec3(0.299, 0.587, 0.114));
-      return mix(vec3(luma), color, saturation);
-    }
     
     void main() {
-      // Calculate UV coordinates for sampling the grass texture based on world position
       vec2 worldUV = (vWorldPosition.xz + planeSize * 0.5) / planeSize;
-      vec2 repeatedUV = worldUV * textureRepeat;
       
-      // Sample the grass texture to get the surface color
-      vec3 surfaceColor = texture2D(grassTexture, repeatedUV).rgb;
+      vec3 surfaceColor = texture2D(grassTexture, worldUV).rgb;
 
-      // Increase saturation
-      float saturationAmount = 1.7; // >1.0 increases saturation
-      surfaceColor = saturateColor(surfaceColor, saturationAmount);
+      // Color gradient from root (texture color) to tip (slightly lighter/greener)
+      vec3 rootColor = surfaceColor;  // Use exact texture color at base
+      vec3 tipColor = vec3(0.2575, 0.4557, 0.05935);
+      // vec3 tipColor = vec3(1.0, 0.0, 0.0);
+      float tipColorStrength = 1.0;
+
+      float b = (1.0 - vUv.y) * tipColorStrength;
+      vec3 lerpedColor = mix(rootColor, tipColor, distance(vec2(0.0, vUv.y), vec2(0.0,1.0)));
+
+      float shadowIntensity = 0.14;
       
-      // Basic lighting calculation
-      vec3 normal = normalize(vNormal);
-      vec3 lightDir = normalize(-lightDirection);
-      float NdotL = max(dot(normal, lightDir), 0.0);
-      
-      // For debugging, let's also output the raw surface color to see what we're sampling
-      vec3 finalColor = surfaceColor;
+      // vec3 finalColor = mix(lerpedColor, lerpedColor, 1.0-shadowIntensity);
 
-      // Apply a gradient along uv.y towards a light yellowish green color
-      // Define the target color (light yellowish green)
-      vec3 lightYellowGreen = vec3(0.5, 0.8, 1.0); // tweak as needed
-
-      // Blend from finalColor (at base, uv.y=0) to lightYellowGreen (at tip, uv.y=1)
-      finalColor = mix(lightYellowGreen, finalColor, clamp(vUv.y, 0.0, 1.0));
-         
-      gl_FragColor = vec4(finalColor, 1.0);
+      // Increase brightness by multiplying color
+      gl_FragColor = vec4(lerpedColor * 1.25, 1.0);
     }
-  `
-  
+  `;
+
   return new THREE.ShaderMaterial({
     vertexShader,
     fragmentShader,
     uniforms: {
       grassTexture: { value: grassTexture },
-      textureRepeat: { value: new THREE.Vector2(16 * MAP_SIZE, 16 * MAP_SIZE) },
-      planeSize: { value: PLANE_SIZE },
+      textureRepeat: { value: textureRepeat },
+      planeSize: { value: planeSize },
       lightDirection: { value: new THREE.Vector3(5, 15, 15).normalize() },
       lightIntensity: { value: 1.0 },
       time: { value: 0.0 },
-      windStrength: { value: 0.5 },
-      windDirection: { value: new THREE.Vector2(1.0, 0.5) }
+      windStrength: { value: 0.1 },
+      windDirection: { value: new THREE.Vector2(1.0, 0.3) },
+      noiseScale: { value: 0.2 },
+      windFrequency: { value: 0.3 },
+      turbulence: { value: 0.1 },
     },
-    side: THREE.DoubleSide
-  })
-}
-
-function createPlane(): THREE.Mesh {
-  const planeGeometry = new THREE.PlaneGeometry(30 * MAP_SIZE, 30 * MAP_SIZE);
-  const planeMaterial = new THREE.MeshStandardMaterial({
-    color: 0x5a7c20,
-    roughness: 1.0, // fully rough, no shininess
-    metalness: 0.0, // no metallic reflection
-    envMap: null,   // explicitly no environment reflection
+    
+    side: THREE.DoubleSide,
   });
-  
-  const plane = new THREE.Mesh(planeGeometry, planeMaterial);
-  plane.rotation.x = -Math.PI / 2; // Rotate the mesh to lie flat
-  plane.position.y = 0; // Explicitly set to 0
-  plane.receiveShadow = true; // Enable shadow receiving for grass shadows later
-  
-  return plane;
 }
 
-// Helper: Biased random for more small than big (quadratic bias)
+function loadPlaneFromGLTF(
+  scene: THREE.Scene,
+  grassTexture: THREE.Texture,
+  onPlaneLoaded?: (plane: THREE.Mesh, planeSize: number, planeArea: number) => void
+): void {
+  const loader = new GLTFLoader();
+
+  loader.load("/surface2.glb", (gltf) => {
+    const surfaceMesh = gltf.scene.children[0];
+
+    if (surfaceMesh && surfaceMesh.type === "Mesh" && surfaceMesh instanceof THREE.Mesh) {
+      const geometry: THREE.BufferGeometry = surfaceMesh.geometry.clone();
+      geometry.applyMatrix4(surfaceMesh.matrixWorld);
+      geometry.computeVertexNormals();
+      geometry.computeBoundingBox();
+
+      const boundingBox = geometry.boundingBox!;
+      const planeWidth = boundingBox.max.x - boundingBox.min.x;
+      const planeHeight = boundingBox.max.z - boundingBox.min.z;
+      const planeSize = Math.max(planeWidth, planeHeight);
+      const planeArea = planeWidth * planeHeight;
+
+      const planeMaterial = new THREE.MeshStandardMaterial({ map: grassTexture });
+      const plane = new THREE.Mesh(geometry, planeMaterial);
+      plane.position.set(0, 0, 0);
+      plane.receiveShadow = true;
+      plane.castShadow = false;
+
+      scene.add(plane);
+
+      if (onPlaneLoaded) {
+        onPlaneLoaded(plane, planeSize, planeArea);
+      }
+    }
+  });
+}
+
 function biasedRandomScale(min: number, max: number): number {
-  // Use Math.pow(Math.random(), 2) for quadratic bias toward min
   return min + (max - min) * Math.pow(Math.random(), 2);
 }
 
 function createGrassInstances(
-  scene: THREE.Scene, 
-  plane: THREE.Mesh, 
-  grassMaterial: THREE.ShaderMaterial
+  scene: THREE.Scene,
+  plane: THREE.Mesh,
+  grassMaterial: THREE.ShaderMaterial,
+  planeArea: number
 ): void {
   const loader = new GLTFLoader();
   loader.load("/grass-patch.glb", (gltf) => {
-    // Inside your GLTFLoader callback for '/grass-patch.glb'
-    const grassMesh = gltf.scene.children[0]; // Your full patch mesh
+    const grassMesh = gltf.scene.children[0];
 
     if (grassMesh && grassMesh.type === "Mesh" && grassMesh instanceof THREE.Mesh) {
       const geometry: THREE.BufferGeometry = grassMesh.geometry.clone();
-
-      // IMPORTANT: Bake the original mesh's transformation into the geometry
-      // This preserves the exact look/orientation from Blender (e.g., blade positions/rotations)
       geometry.applyMatrix4(grassMesh.matrixWorld);
-
-      // Prepare geometry (fixes any normal/bound issues)
-      geometry.computeVertexNormals();
-      
+      // geometry.computeVertexNormals();
       geometry.computeBoundingBox();
-      console.log("Grass geometry bounding box:", geometry.boundingBox);
 
-      // Calculate number of instances based on density and plane area
-      const planeArea = (30 * MAP_SIZE) * (30 * MAP_SIZE); // Width * Height of the plane
       const instanceCount = Math.floor(planeArea * GRASS_DENSITY);
-      
-      // Create InstancedMesh with calculated count
       const instancedMesh = new THREE.InstancedMesh(geometry, grassMaterial, instanceCount);
       instancedMesh.castShadow = false;
       instancedMesh.receiveShadow = true;
 
-      // Sampler setup
-      const sampler = new MeshSurfaceSampler(plane)
-        .setWeightAttribute("color")
-        .build();
+      const sampler = new MeshSurfaceSampler(plane).build();
       const position = new THREE.Vector3();
       const matrix = new THREE.Matrix4();
       const scale = new THREE.Vector3();
       const rotation = new THREE.Euler();
 
-      for (let i = 0; i < instanceCount; i++) {
+      for (let i = 0; i < 60 * 60 * GRASS_DENSITY; i++) {
         sampler.sample(position);
         plane.localToWorld(position);
-        position.y = 0; // Keep on the plane
+        position.y += 0.01;
 
-        // Random scale between 1 and 2.5, more small than big
         const s = biasedRandomScale(1, 2.5);
         scale.set(s, s, s);
-
-        // Add a random rotation around the Y axis for each instance
         rotation.set(0, Math.random() * Math.PI * 2, 0);
 
-        // Compose transformation
         matrix.compose(position, new THREE.Quaternion().setFromEuler(rotation), scale);
-
         instancedMesh.setMatrixAt(i, matrix);
       }
 
       instancedMesh.instanceMatrix.needsUpdate = true;
       scene.add(instancedMesh);
-
-      console.log("Instanced grass added");
     }
   });
 }
 
 export function createGrassSystem(scene: THREE.Scene): GrassSystem {
-  // Create textured plane with grass texture
   const textureLoader = new THREE.TextureLoader();
   const grassTexture = textureLoader.load("/grass.png");
-  grassTexture.wrapS = THREE.RepeatWrapping;
-  grassTexture.wrapT = THREE.RepeatWrapping;
-  grassTexture.repeat.set(1, 1); // Repeat texture 1x1 times across the plane
 
-  // Create plane
-  const plane = createPlane();
-  scene.add(plane);
+  grassTexture.colorSpace = THREE.SRGBColorSpace;
+  grassTexture.magFilter = THREE.LinearFilter;
+  grassTexture.minFilter = THREE.LinearMipmapLinearFilter;
+  grassTexture.generateMipmaps = true;
+  grassTexture.flipY = true;
 
-  // Create shared grass shader material with the grass texture
-  const grassMaterial = createGrassShaderMaterial(grassTexture);
-  // Set the texture repeat to match the plane's texture repeat
-  grassMaterial.uniforms.textureRepeat.value.copy(grassTexture.repeat);
+  let grassMaterial: THREE.ShaderMaterial | null = null;
+  let plane: THREE.Mesh | null = null;
 
-  // Create grass instances
-  createGrassInstances(scene, plane, grassMaterial);
+  loadPlaneFromGLTF(scene, grassTexture, (loadedPlane, planeSize, planeArea) => {
+    plane = loadedPlane;
+    const textureRepeat = new THREE.Vector2(1, 1);
+    grassMaterial = createGrassShaderMaterial(grassTexture, planeSize, textureRepeat);
+    createGrassInstances(scene, plane, grassMaterial, planeArea);
+  });
 
-  // Function to update wind animation
   const updateWind = (time: number) => {
-    if (grassMaterial.uniforms.time) {
+    if (grassMaterial && grassMaterial.uniforms.time) {
       grassMaterial.uniforms.time.value = time;
     }
   };
 
-  return { plane, grassMaterial, updateWind };
+  const setWindParameters = (params: {
+    strength?: number;
+    direction?: THREE.Vector2;
+    noiseScale?: number;
+    frequency?: number;
+    turbulence?: number;
+  }) => {
+    if (!grassMaterial) return;
+    
+    if (params.strength !== undefined) {
+      grassMaterial.uniforms.windStrength.value = params.strength;
+    }
+    if (params.direction !== undefined) {
+      grassMaterial.uniforms.windDirection.value = params.direction;
+    }
+    if (params.noiseScale !== undefined) {
+      grassMaterial.uniforms.noiseScale.value = params.noiseScale;
+    }
+    if (params.frequency !== undefined) {
+      grassMaterial.uniforms.windFrequency.value = params.frequency;
+    }
+    if (params.turbulence !== undefined) {
+      grassMaterial.uniforms.turbulence.value = params.turbulence;
+    }
+  };
+
+  return {
+    get plane() {
+      return plane;
+    },
+    get grassMaterial() {
+      return grassMaterial!;
+    },
+    updateWind,
+    setWindParameters,
+  };
 }

@@ -183,19 +183,8 @@ function createGrassShaderMaterial(grassTexture: THREE.Texture): THREE.ShaderMat
       vec3 lightDir = normalize(-lightDirection);
       float NdotL = max(dot(normal, lightDir), 0.0);
       
-      // DEBUG: Use pure white to test texture sampling
-      // vec3 grassColor = mix(vec3(0.2, 0.6, 0.2), surfaceColor, 0.7);
       vec3 grassColor = vec3(1.0, 1.0, 1.0); // Pure white for debugging
-      
-      // For debugging, let's also output the raw surface color to see what we're sampling
-      // This will show us exactly what colors are being sampled from the texture:
       vec3 finalColor = surfaceColor;
-      
-      // Comment out lighting for debugging:
-      // vec3 ambient = grassColor * 0.3;
-      // vec3 diffuse = grassColor * NdotL * lightIntensity;
-      // float grassVariation = sin(vUv.y * 10.0) * 0.1 + 1.0;
-      // vec3 finalColor = (ambient + diffuse) * grassVariation;
       
       gl_FragColor = vec4(finalColor, 1.0);
     }

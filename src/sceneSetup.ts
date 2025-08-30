@@ -32,6 +32,11 @@ export function createSceneSetup(canvas: HTMLCanvasElement): SceneSetup {
   renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  
+  // Set proper color space for accurate color representation
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  // renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  // renderer.toneMappingExposure = 1.0;
 
   // Controls
   const controls = new OrbitControls(camera, canvas);
@@ -47,10 +52,10 @@ export function createSceneSetup(canvas: HTMLCanvasElement): SceneSetup {
 
 export function setupLighting(scene: THREE.Scene): void {
   // Proper lighting setup for realistic rendering
-  const ambientLight = new THREE.AmbientLight(0x404040, 0.5); // Soft ambient
+  const ambientLight = new THREE.AmbientLight(0x404040, 1.5); // Increased for better visibility
   scene.add(ambientLight);
 
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 10);
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 2.0); // Reduced from 2.0
   directionalLight.position.set(5, 15, 15); // Moved to front and lower
   directionalLight.castShadow = true;
   directionalLight.shadow.mapSize.width = 2048;
@@ -68,7 +73,7 @@ export function createSkybox(scene: THREE.Scene): void {
   const textureLoader = new THREE.TextureLoader();
   
   // Load skybox texture
-  const skyboxTexture = textureLoader.load("/sky_41_2k.png");
+  const skyboxTexture = textureLoader.load("/sky_16_2k.png");
   skyboxTexture.mapping = THREE.EquirectangularReflectionMapping;
   skyboxTexture.wrapS = THREE.RepeatWrapping;
   skyboxTexture.wrapT = THREE.ClampToEdgeWrapping;
@@ -82,6 +87,6 @@ export function createSkybox(scene: THREE.Scene): void {
   });
   const skybox = new THREE.Mesh(skyboxGeometry, skyboxMaterial);
   // Lower the skybox by 5% (25 units down from center for a 500 radius sphere)
-  skybox.position.y = -80;
+  skybox.position.y = -90;
   scene.add(skybox);
 }

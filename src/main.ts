@@ -1,6 +1,9 @@
 import "./style.css";
 import { createSceneSetup, setupLighting, createSkybox } from "./sceneSetup";
 import { createGrassSystem } from "./grassSystem";
+import { createFireflySystem } from "./fireflySystem";
+import { PerformanceMonitor } from "./performanceMonitor";
+import * as THREE from "three";
 
 // Get the canvas element
 const canvas = document.getElementById("three-canvas") as HTMLCanvasElement;
@@ -17,6 +20,15 @@ createSkybox(scene);
 // Create grass system (plane and grass)
 const grassSystem = createGrassSystem(scene);
 
+// Create firefly system
+const fireflySystem = createFireflySystem(scene, camera);
+
+// Tone mapping already disabled in sceneSetup.ts for accurate colors
+
+// Initialize performance monitor
+const performanceMonitor = new PerformanceMonitor();
+performanceMonitor.setRenderer(renderer);
+
 // Animation loop
 function animate() {
   requestAnimationFrame(animate);
@@ -27,6 +39,12 @@ function animate() {
   // Update wind animation
   const elapsedTime = performance.now() * 0.001; // Convert to seconds
   grassSystem.updateWind(elapsedTime);
+
+  // Update fireflies
+  fireflySystem.update(elapsedTime, camera);
+
+  // Update performance monitor
+  performanceMonitor.update();
 
   renderer.render(scene, camera);
 }
