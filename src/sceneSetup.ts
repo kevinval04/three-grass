@@ -1,11 +1,9 @@
 import * as THREE from "three";
-import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
 
 export interface SceneSetup {
   scene: THREE.Scene;
   camera: THREE.PerspectiveCamera;
   renderer: THREE.WebGLRenderer;
-  controls: OrbitControls;
 }
 
 export function createSceneSetup(canvas: HTMLCanvasElement): SceneSetup {
@@ -38,16 +36,11 @@ export function createSceneSetup(canvas: HTMLCanvasElement): SceneSetup {
   // renderer.toneMapping = THREE.ACESFilmicToneMapping;
   // renderer.toneMappingExposure = 1.0;
 
-  // Controls
-  const controls = new OrbitControls(camera, canvas);
-  controls.enableDamping = true;
-  controls.dampingFactor = 0.05;
-
   // Camera position - lowered for better view
   camera.position.set(4, 3, 6);
   camera.lookAt(0, 0, 0);
 
-  return { scene, camera, renderer, controls };
+  return { scene, camera, renderer };
 }
 
 export function setupLighting(scene: THREE.Scene): void {
@@ -79,6 +72,20 @@ export function createSkybox(scene: THREE.Scene): void {
   skyboxTexture.wrapT = THREE.ClampToEdgeWrapping;
 
   // Create skybox
+  const skyboxGeometry = new THREE.SphereGeometry(500, 64, 32);
+  const skyboxMaterial = new THREE.MeshBasicMaterial({
+    map: skyboxTexture,
+    side: THREE.BackSide, // Render on the inside of the sphere
+    fog: false,
+  });
+  const skybox = new THREE.Mesh(skyboxGeometry, skyboxMaterial);
+  // Lower the skybox by 5% (25 units down from center for a 500 radius sphere)
+  skybox.position.y = -90;
+  scene.add(skybox);
+}
+
+export function createSkyboxWithTexture(scene: THREE.Scene, skyboxTexture: THREE.Texture): void {
+  // Create skybox with preloaded texture
   const skyboxGeometry = new THREE.SphereGeometry(500, 64, 32);
   const skyboxMaterial = new THREE.MeshBasicMaterial({
     map: skyboxTexture,

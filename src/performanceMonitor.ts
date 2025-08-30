@@ -1,11 +1,14 @@
+import * as THREE from 'three';
+
+
 export class PerformanceMonitor {
-  private container: HTMLDivElement;
-  private fpsElement: HTMLDivElement;
-  private cpuElement: HTMLDivElement;
-  private memoryElement: HTMLDivElement;
-  private renderElement: HTMLDivElement;
-  private gpuElement: HTMLDivElement;
-  private toggleButton: HTMLButtonElement;
+  private container!: HTMLDivElement;
+  private fpsElement!: HTMLDivElement;
+  private cpuElement!: HTMLDivElement;
+  private memoryElement!: HTMLDivElement;
+  private renderElement!: HTMLDivElement;
+  private gpuElement!: HTMLDivElement;
+  private toggleButton!: HTMLButtonElement;
   
   private visible: boolean = false;
   private frameCount: number = 0;
@@ -23,7 +26,7 @@ export class PerformanceMonitor {
   private maxFrameTimes: number = 60;
   private performanceObserver: PerformanceObserver | null = null;
   private lastCPUTime: number = 0;
-  private lastSystemTime: number = 0;
+
 
   constructor() {
     this.createUI();
@@ -158,7 +161,6 @@ export class PerformanceMonitor {
 
     // Fallback CPU monitoring using timing
     this.lastCPUTime = performance.now();
-    this.lastSystemTime = Date.now();
   }
 
   public setRenderer(renderer: THREE.WebGLRenderer): void {
@@ -223,11 +225,9 @@ export class PerformanceMonitor {
 
   private updateCPU(): void {
     const currentTime = performance.now();
-    const currentSystemTime = Date.now();
     
     // Calculate frame time
     const frameTime = currentTime - this.lastCPUTime;
-    const systemTimeDelta = currentSystemTime - this.lastSystemTime;
     
     // Estimate CPU usage based on frame timing
     // This is an approximation - real CPU usage requires native APIs
@@ -251,7 +251,6 @@ export class PerformanceMonitor {
     `;
     
     this.lastCPUTime = currentTime;
-    this.lastSystemTime = currentSystemTime;
   }
 
   private updateMemory(): void {

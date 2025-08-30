@@ -95,7 +95,7 @@ function createGrassShaderMaterial(
       float b = (1.0 - vUv.y) * tipColorStrength;
       vec3 lerpedColor = mix(rootColor, tipColor, distance(vec2(0.0, vUv.y), vec2(0.0,1.0)));
 
-      float shadowIntensity = 0.5;
+      float shadowIntensity = 0.14;
       
       vec3 finalColor = mix(lerpedColor, lerpedColor, 1.0-shadowIntensity);
 

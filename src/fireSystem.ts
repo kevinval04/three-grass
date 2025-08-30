@@ -27,25 +27,19 @@ const fireFragmentShader = `
   ${unitySimpleNoise}
   
   void main() {
-    // Add upward movement with speed control (negative vUv makes it go upward)
     vec2 st = -vUv;
-    st.y += uTime * uSpeed; // Move pattern upward
+    st.y += uTime * uSpeed; // so it moves up
     
     // Generate Unity Voronoi noise with density 10 and time as angle offset
     float voronoiOut, voronoiCells;
     Unity_Voronoi_float(st, uTime + 10.0, 10.0, voronoiOut, voronoiCells);
     
-    // Generate Unity Simple Noise with scale of 50 (no time)
+    // Generate Unity Simple Noise with scale of 50 (no time), this makes the noise more irregular
     float simpleNoise = Unity_SimpleNoise_float(vUv, 50.0);
     
-    // Multiply Voronoi with Unity Simple Noise
     float combinedNoise = voronoiOut * simpleNoise;
     
-    // White background with black cells
-    vec3 cellColor = vec3(0.0); // Black
-    
-    // Mix between white and black based on combined noise
-    vec3 noiseFinal = mix(cellColor, vec3(1.0, 1.0, 1.0), combinedNoise);
+    vec3 noiseFinal = mix(vec3(0.0), vec3(1.0), combinedNoise);
     
     // Apply intensity
     noiseFinal *= uIntensity;
@@ -55,15 +49,15 @@ const fireFragmentShader = `
     vec4 fireShape = texture2D(fire, vUv);
     g = (fireShape.x) * g;
 
-    float edge = smoothstep(0.0, flameStart, vUv.y);
+    float edge = smoothstep(0.0, flameStart, vUv.y); // adjust where the noise bubbles start to appear
     noiseFinal = mix(vec3(1.0), noiseFinal, edge);
 
     float cappedNoise = min(noiseFinal.x, 1.0) * 0.9;
     float fireWithNoise = cappedNoise + g;
     fireWithNoise = step(1.0, fireWithNoise);
 
-    float glow = 4.0;
-    vec4 bloomColor = vec4(vec3(1.0, 1.0, 1.0) * glow, 1.0);
+    float glow = 4.0; // hdr +4 value
+    vec4 bloomColor = vec4(vec3(1.0) * glow, 1.0);
     bloomColor *= uColor;
 
     vec4 finalColor = uColor * fireWithNoise;

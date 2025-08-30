@@ -2,7 +2,7 @@ import * as THREE from "three";
 
 export interface FireflySystem {
   particles: THREE.Points;
-  update: (time: number, camera: THREE.Camera) => void;
+  update: (time: number) => void;
   setFireflyCount: (count: number) => void;
   setGlowIntensity: (intensity: number) => void;
 }
@@ -209,7 +209,7 @@ export function createFireflySystem(scene: THREE.Scene, camera: THREE.Camera): F
   
   scene.add(particles);
   
-  const update = (time: number, camera: THREE.Camera) => {
+  const update = (time: number) => {
     if (material.uniforms.time) {
       material.uniforms.time.value = time;
     }
