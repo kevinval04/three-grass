@@ -100,7 +100,7 @@ function createGrassShaderMaterial(
       vec3 finalColor = mix(lerpedColor, lerpedColor, 1.0-shadowIntensity);
 
       // Increase brightness by multiplying color
-      gl_FragColor = vec4(finalColor, 1.0);
+      gl_FragColor = vec4(finalColor * 1.2, 1.0);
     }
   `;
 

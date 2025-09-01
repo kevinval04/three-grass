@@ -1,9 +1,8 @@
 import "./style.css";
 import { createSceneSetup, setupLighting, createSkyboxWithTexture } from "./sceneSetup";
 import { createGrassSystem } from "./grassSystem";
-import type { GrassExclusionZone } from "./grassSystem";
-import { createFireflySystem } from "./fireflySystem";
-import { PerformanceMonitor } from "./performanceMonitor";
+import type { GrassExclusionZone, GrassSystem } from "./grassSystem";
+import { createFireflySystem, type FireflySystem } from "./fireflySystem";
 import { createCampfireSystem } from "./campfire";
 import { createPostProcessing } from "./postProcessing";
 import type { CampfireSystem } from "./campfire";
@@ -21,11 +20,10 @@ const loadingAsset = document.getElementById("loading-asset") as HTMLElement;
 let scene: THREE.Scene;
 let camera: THREE.PerspectiveCamera;
 let renderer: THREE.WebGLRenderer;
-let fireflySystem: any;
+let fireflySystem: FireflySystem;
 let campfireSystem: CampfireSystem;
-let grassSystem: any;
+let grassSystem: GrassSystem;
 let postProcessing: PostProcessingSetup;
-let performanceMonitor: PerformanceMonitor;
 let assets: AssetCollection;
 
 // Loading progress handler
@@ -53,52 +51,37 @@ function onAssetsLoaded(loadedAssets: AssetCollection) {
   }, 500);
 }
 
-// Initialize the main scene
 function initializeScene() {
-  // Get the canvas element
   const canvas = document.getElementById("three-canvas") as HTMLCanvasElement;
 
-  // Initialize scene, camera, renderer
   const sceneSetup = createSceneSetup(canvas);
   scene = sceneSetup.scene;
   camera = sceneSetup.camera;
   renderer = sceneSetup.renderer;
 
-  // Setup lighting
   setupLighting(scene);
 
-  // Create skybox with preloaded texture
   createSkyboxWithTexture(scene, assets.skybox);
 
-  // Create firefly system
   fireflySystem = createFireflySystem(scene, camera);
 
-  // Create campfire system positioned in front of the camera
-  const campfirePosition = new THREE.Vector3(4, 2.0, 3);
+  const campfirePosition = new THREE.Vector3(4, 2.0, 3); // Around infront of the camera
   const campfireRotation = new THREE.Euler(0, 0, 0);
   campfireSystem = createCampfireSystem(scene, campfirePosition, campfireRotation);
 
-  // Create exclusion zone around campfire so grass doesn't spawn there
   const campfireExclusionZone: GrassExclusionZone = {
     center: new THREE.Vector3(campfirePosition.x, 0, campfirePosition.z),
     radius: 2.5
   };
 
-  // Create grass system with campfire exclusion zone
   grassSystem = createGrassSystem(scene, [campfireExclusionZone]);
 
-  // Setup post-processing with bloom for fire effects
   postProcessing = createPostProcessing(renderer, scene, camera, {
     strength: 0.1,
     radius: 0.1,
     threshold: 0.8
   });
 
-  // Initialize performance monitor
-  performanceMonitor = new PerformanceMonitor();
-  performanceMonitor.setRenderer(renderer);
-
-  // Setup EXPLORE button click handler
   const exploreButton = document.getElementById("explore-text");
   if (exploreButton) {
     exploreButton.addEventListener("click", () => {
@@ -106,18 +89,14 @@ function initializeScene() {
     });
   }
 
-  // Apply mobile camera position after all components are initialized
   setupMobileCameraPosition();
 
-  // Start the animation loop
   startAnimationLoop();
 }
 
-// Hide loading screen
 function hideLoadingScreen() {
   loadingScreen.classList.add("hidden");
   
-  // Remove loading screen from DOM after transition
   setTimeout(() => {
     loadingScreen.style.display = "none";
   }, 800);
@@ -129,25 +108,19 @@ let targetCameraX = 0;
 let currentCameraX = 0;
 const cameraInertia = 0.02; // How fast the camera follows the target (lower = more inertia)
 
-// Mouse movement handler
 function onMouseMove(event: MouseEvent) {
-  // Normalize mouse X to -1 to 1 range
-  mouseX = (event.clientX / window.innerWidth) * 2 - 1;
-  // Set target camera X position based on mouse (reduced range for slower movement)
-  targetCameraX = mouseX * 0.2; // Multiply by 0.8 for more subtle movement range
+  mouseX = (event.clientX / window.innerWidth) * 2 - 1;   // Normalize mouse X to -1 to 1 range
+  targetCameraX = mouseX * 0.2;
 }
 
-// Add mouse move listener
 window.addEventListener('mousemove', onMouseMove);
 
-// Function to set mobile camera position and campfire rotation
 function setupMobileCameraPosition() {
   if (!camera || !campfireSystem) return; // Guard clause for when components aren't initialized yet
   
-  const isMobile = window.innerWidth <= 768; // Consider screens <= 768px as mobile
+  const isMobile = window.innerWidth <= 768;
   
   if (isMobile) {
-    // Mobile camera position and rotation
     camera.position.set(5.6, 2.445, 4.25);
     camera.rotation.set(-0.6, 0.8, 0.45);
     
@@ -161,19 +134,15 @@ function setupMobileCameraPosition() {
   }
 }
 
-// Start the animation loop (called after scene initialization)
 function startAnimationLoop() {
   animate();
 }
 
-// Animation loop
 function animate() {
   requestAnimationFrame(animate);
 
-  // Update camera position with inertia (only horizontal movement)
   currentCameraX += (targetCameraX - currentCameraX) * cameraInertia;
   
-  // Apply camera movement (only modify X position, keep Y and Z the same)
   const isMobile = window.innerWidth <= 768;
   const basePosition = isMobile ? 
     new THREE.Vector3(5.6, 2.445, 4.25) : 
@@ -183,27 +152,17 @@ function animate() {
   camera.position.y = basePosition.y;
   camera.position.z = basePosition.z;
   
-  // Keep camera looking at the center
   camera.lookAt(0, 0, 0);
 
-  // Update wind animation
   const elapsedTime = performance.now() * 0.001; // Convert to seconds
   grassSystem.updateWind(elapsedTime);
 
-  // Update fireflies
   fireflySystem.update(elapsedTime);
 
-  // Update campfire
   campfireSystem.update(elapsedTime);
-
-  // Update performance monitor
-  performanceMonitor.update();
-
-  // Render with post-processing for bloom effects
   postProcessing.render();
 }
 
-// Handle window resize
 window.addEventListener("resize", () => {
   if (camera && renderer && postProcessing) {
     camera.aspect = window.innerWidth / window.innerHeight;
@@ -211,12 +170,10 @@ window.addEventListener("resize", () => {
     renderer.setSize(window.innerWidth, window.innerHeight);
     postProcessing.resize(window.innerWidth, window.innerHeight);
     
-    // Reapply mobile camera position if needed
     setupMobileCameraPosition();
   }
 });
 
-// Initialize the asset loader and start loading
 console.log("Starting asset loading...");
 const assetLoader = new AssetLoader(onLoadingProgress, onAssetsLoaded);
 assetLoader.loadAllAssets();

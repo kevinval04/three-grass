@@ -20,8 +20,7 @@ export class AssetLoader {
   private gltfLoader: GLTFLoader;
   private onProgress: (progress: LoadingProgress) => void;
   private onComplete: (assets: AssetCollection) => void;
-  private totalAssets = 0;
-  private loadedAssets = 0;
+  
   private currentAssetName = '';
   private assets: AssetCollection;
 
@@ -86,8 +85,6 @@ export class AssetLoader {
       { type: 'model', path: '/surface.glb', name: 'surface' },
     ];
 
-    this.totalAssets = assetsToLoad.length;
-
     // Start loading all assets
     assetsToLoad.forEach(asset => {
       this.loadAsset(asset.type, asset.path, asset.name);
@@ -102,9 +99,6 @@ export class AssetLoader {
         this.textureLoader.load(
           path,
           (texture) => {
-            texture.mapping = THREE.EquirectangularReflectionMapping;
-            texture.wrapS = THREE.RepeatWrapping;
-            texture.wrapT = THREE.ClampToEdgeWrapping;
             this.assets.skybox = texture;
             console.log(`Skybox loaded: ${name}`);
           },
