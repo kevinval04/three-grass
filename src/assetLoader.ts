@@ -70,8 +70,9 @@ export class AssetLoader {
       { type: 'skybox', path: '/sky_16_2k.png', name: 'skybox' },
       
       // Textures
-      { type: 'texture', path: '/grass.png', name: 'grass' },
+      { type: 'texture', path: '/grass1.png', name: 'grass' },
       { type: 'texture', path: '/fire/fire2.png', name: 'fire' },
+      { type: 'texture', path: '/water.png', name: 'water' },
       
       // Ground textures
       { type: 'texture', path: '/ground/base.jpg', name: 'groundBase' },
@@ -118,6 +119,14 @@ export class AssetLoader {
               texture.minFilter = THREE.LinearMipmapLinearFilter;
               texture.generateMipmaps = true;
               texture.flipY = true;
+            } else if (name === 'water') {
+              // Water texture for grass exclusion - needs to match surface UV mapping
+              texture.wrapS = THREE.ClampToEdgeWrapping;
+              texture.wrapT = THREE.ClampToEdgeWrapping;
+              texture.magFilter = THREE.LinearFilter;
+              texture.minFilter = THREE.LinearFilter;
+              texture.flipY = false; // Match surface model UV orientation
+              texture.colorSpace = THREE.LinearSRGBColorSpace; // For grayscale sampling
             } else if (name.startsWith('ground')) {
               texture.wrapS = THREE.RepeatWrapping;
               texture.wrapT = THREE.RepeatWrapping;

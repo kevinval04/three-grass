@@ -37,7 +37,7 @@ export function createSceneSetup(canvas: HTMLCanvasElement): SceneSetup {
   // renderer.toneMappingExposure = 1.0;
 
   // Camera position - lowered for better view
-  camera.position.set(4, 3, 6);
+  camera.position.set(4, 1.76, 6);
   camera.lookAt(0, 0, 0);
 
   return { scene, camera, renderer };
@@ -48,8 +48,8 @@ export function setupLighting(scene: THREE.Scene): void {
   const ambientLight = new THREE.AmbientLight(0x404040, 1.5); // Increased for better visibility
   scene.add(ambientLight);
 
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0); // Reduced from 2.0
-  directionalLight.position.set(5, 15, 15); // Moved to front and lower
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 5.0);
+  directionalLight.position.set(0, 100, 20); // Moved to front and lower
   directionalLight.castShadow = true;
   directionalLight.shadow.mapSize.width = 2048;
   directionalLight.shadow.mapSize.height = 2048;
@@ -79,8 +79,7 @@ export function createSkybox(scene: THREE.Scene): void {
     fog: false,
   });
   const skybox = new THREE.Mesh(skyboxGeometry, skyboxMaterial);
-  // Lower the skybox by 5% (25 units down from center for a 500 radius sphere)
-  skybox.position.y = -90;
+  
   scene.add(skybox);
 }
 
@@ -94,6 +93,7 @@ export function createSkyboxWithTexture(scene: THREE.Scene, skyboxTexture: THREE
   });
   const skybox = new THREE.Mesh(skyboxGeometry, skyboxMaterial);
   // Lower the skybox by 5% (25 units down from center for a 500 radius sphere)
-  skybox.position.y = -90;
+  skybox.position.y = -80;
+  skybox.position.x = -80;
   scene.add(skybox);
 }

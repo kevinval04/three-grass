@@ -78,3 +78,9 @@ export const unitySimpleNoise = `
     return t;
   }
 `;
+
+
+
+
+// 
+// {"Moss green 3":"74894B","Reseda green 2":"6A7E44","Reseda green":"6C8146","Fern green":"647741","Moss green 4":"7C8F4F","Moss green 2":"7F9852","Moss green 6":"77904E","Moss green":"849050","Moss green 5":"8AA35A"}

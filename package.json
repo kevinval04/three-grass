@@ -14,7 +14,10 @@
     "vite": "^7.1.2"
   },
   "dependencies": {
+    "@theatre/core": "^0.7.2",
+    "@theatre/studio": "^0.7.2",
     "three": "^0.179.1",
-    "three-instanced-mesh": "^0.96.2"
+    "three-instanced-mesh": "^0.96.2",
+    "three-mesh-bvh": "^0.9.1"
   }
 }

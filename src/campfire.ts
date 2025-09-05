@@ -90,6 +90,37 @@ export function createCampfireSystem(
   campfireLight.shadow.mapSize.height = 1024;
   campfireGroup.add(campfireLight); // Add to group instead of scene
 
+  // Fire flicker properties
+  const baseIntensity = 3.0;
+  const baseColor = new THREE.Color(0xff4400);
+  const flickerSpeed = 2.5;
+  const intensityVariation = 0.4; // More controlled variation
+  const colorVariation = 0.3;
+  let flickerTime = 0;
+
+  // Simple noise function for natural fire flicker
+  const noise = (x: number, y: number = 0, z: number = 0) => {
+    // Simple 3D noise using sine waves with different frequencies
+    const n1 = Math.sin(x * 1.0 + y * 1.3 + z * 0.7) * 0.5;
+    const n2 = Math.sin(x * 2.1 + y * 0.8 + z * 1.4) * 0.25;
+    const n3 = Math.sin(x * 4.3 + y * 2.1 + z * 0.9) * 0.125;
+    const n4 = Math.sin(x * 8.7 + y * 4.2 + z * 1.8) * 0.0625;
+    return (n1 + n2 + n3 + n4) + 0.5; // Normalize to 0-1 range
+  };
+
+  // Fire flare particle system
+  interface FireParticle {
+    position: THREE.Vector3;
+    velocity: THREE.Vector3;
+    life: number;
+    maxLife: number;
+    size: number;
+  }
+
+  const particles: FireParticle[] = [];
+  const maxParticles = 50;
+  const particleSpawnRate = 0.1; // Spawn chance per frame
+
   // Create toon material function for this campfire
   function createCampfireToonMaterial(color: THREE.Color, lightPosition: THREE.Vector3): THREE.ShaderMaterial {
     const material = new THREE.ShaderMaterial({
@@ -172,8 +203,193 @@ export function createCampfireSystem(
     }
   );
 
+  // Create particle system for fire flares
+  const particleGeometry = new THREE.BufferGeometry();
+  const particlePositions = new Float32Array(maxParticles * 3);
+  const particleColors = new Float32Array(maxParticles * 3);
+  const particleSizes = new Float32Array(maxParticles);
+  const particleOpacities = new Float32Array(maxParticles);
+
+  particleGeometry.setAttribute('position', new THREE.BufferAttribute(particlePositions, 3));
+  particleGeometry.setAttribute('color', new THREE.BufferAttribute(particleColors, 3));
+  particleGeometry.setAttribute('size', new THREE.BufferAttribute(particleSizes, 1));
+  particleGeometry.setAttribute('opacity', new THREE.BufferAttribute(particleOpacities, 1));
+
+  const particleMaterial = new THREE.ShaderMaterial({
+    uniforms: {},
+    vertexShader: `
+      attribute float size;
+      attribute float opacity;
+      varying float vOpacity;
+      varying vec3 vColor;
+      
+      void main() {
+        vOpacity = opacity;
+        vColor = color;
+        
+        vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = size * (300.0 / -mvPosition.z);
+        gl_Position = projectionMatrix * mvPosition;
+      }
+    `,
+    fragmentShader: `
+      varying float vOpacity;
+      varying vec3 vColor;
+      
+      void main() {
+        float distance = length(gl_PointCoord - vec2(0.5));
+        if (distance > 0.5) discard;
+        
+        // Solid color - no transparency
+        gl_FragColor = vec4(vColor, 1.0);
+      }
+    `,
+    transparent: false,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    vertexColors: true
+  });
+
+  const particleSystem = new THREE.Points(particleGeometry, particleMaterial);
+  campfireGroup.add(particleSystem);
+
+  // Function to spawn a new particle
+  const spawnParticle = () => {
+    if (particles.length >= maxParticles) return;
+
+    const particle: FireParticle = {
+      position: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.3, // Small spread around fire center
+        -0.2, // Start near fire base
+        (Math.random() - 0.5) * 0.3
+      ),
+      velocity: new THREE.Vector3(
+        (Math.random() - 0.5) * 0.5, // Random horizontal drift
+        1.5 + Math.random() * 1.0, // Upward velocity with variation
+        (Math.random() - 0.5) * 0.5
+      ),
+      life: 0,
+      maxLife: 1.0 + Math.random() * 1.5, // 1-2.5 seconds life
+      size: 0.05 + Math.random() * 0.05 // Random size 0.05-0.1 (tiny specks)
+    };
+
+    particles.push(particle);
+  };
+
+  // Function to update particles
+  const updateParticles = (deltaTime: number) => {
+    // Spawn new particles occasionally
+    if (Math.random() < particleSpawnRate && particles.length < maxParticles) {
+      spawnParticle();
+    }
+
+    // Update existing particles
+    for (let i = particles.length - 1; i >= 0; i--) {
+      const particle = particles[i];
+      
+      // Update life
+      particle.life += deltaTime;
+      
+      // Remove dead particles
+      if (particle.life >= particle.maxLife) {
+        particles.splice(i, 1);
+        continue;
+      }
+      
+      // Update position
+      particle.position.add(particle.velocity.clone().multiplyScalar(deltaTime));
+      
+      // Add some drift and slow down over time
+      particle.velocity.y *= 0.98; // Slight deceleration
+      particle.velocity.x *= 0.99;
+      particle.velocity.z *= 0.99;
+    }
+
+    // Update geometry attributes
+    const positions = particleGeometry.attributes.position.array as Float32Array;
+    const colors = particleGeometry.attributes.color.array as Float32Array;
+    const sizes = particleGeometry.attributes.size.array as Float32Array;
+    const opacities = particleGeometry.attributes.opacity.array as Float32Array;
+
+    // Clear arrays
+    positions.fill(0);
+    colors.fill(0);
+    sizes.fill(0);
+    opacities.fill(0);
+
+    // Fill with active particles
+    for (let i = 0; i < particles.length; i++) {
+      const particle = particles[i];
+      const lifeRatio = particle.life / particle.maxLife;
+      
+      // Position
+      positions[i * 3] = particle.position.x;
+      positions[i * 3 + 1] = particle.position.y;
+      positions[i * 3 + 2] = particle.position.z;
+      
+      // Color (red gradient)
+      const red = 1.0;
+      const green = 0.1 * (1.0 - lifeRatio); // Very little green, fades out
+      const blue = 0.0; // No blue for pure red
+      
+      colors[i * 3] = red;
+      colors[i * 3 + 1] = green;
+      colors[i * 3 + 2] = blue;
+      
+      // Size (shrink over time)
+      sizes[i] = particle.size * (1.0 - lifeRatio * 0.5);
+      
+      // No opacity - particles are solid (but we still need to set the attribute)
+      opacities[i] = 1.0;
+    }
+
+    // Mark attributes as needing update
+    particleGeometry.attributes.position.needsUpdate = true;
+    particleGeometry.attributes.color.needsUpdate = true;
+    particleGeometry.attributes.size.needsUpdate = true;
+    particleGeometry.attributes.opacity.needsUpdate = true;
+
+    // Update draw range
+    particleGeometry.setDrawRange(0, particles.length);
+  };
+
+  // Function to update fire light flicker
+  const updateFireFlicker = (time: number) => {
+    flickerTime = time * flickerSpeed;
+    
+    // Use noise function for natural fire flicker
+    const primaryNoise = noise(flickerTime, 0, 0);
+    const secondaryNoise = noise(flickerTime * 1.3, flickerTime * 0.7, 0);
+    const detailNoise = noise(flickerTime * 2.1, flickerTime * 1.4, flickerTime * 0.8);
+    
+    // Combine noise layers for complex but smooth variation
+    const combinedNoise = primaryNoise * 0.6 + secondaryNoise * 0.3 + detailNoise * 0.1;
+    
+    // Apply smooth flickering to intensity (never goes below 60% of base)
+    const intensityMultiplier = 0.6 + (combinedNoise * intensityVariation);
+    campfireLight.intensity = baseIntensity * intensityMultiplier;
+    
+    // Smooth color variation
+    const colorFlicker = (combinedNoise - 0.5) * colorVariation;
+    const r = Math.min(1, Math.max(0, baseColor.r + colorFlicker * 0.2));
+    const g = Math.min(1, Math.max(0, baseColor.g + colorFlicker * 0.1));
+    const b = Math.min(1, Math.max(0, baseColor.b - colorFlicker * 0.1));
+    
+    campfireLight.color.setRGB(r, g, b);
+    
+    // Gentle position flicker
+    const positionFlicker = (combinedNoise - 0.5) * 0.04;
+    campfireLight.position.y = 0.5 + positionFlicker;
+  };
+
+  let lastTime = 0;
   const update = (time: number) => {
+    const deltaTime = time - lastTime;
+    lastTime = time;
+    
     campfireSystem.update(time);
+    updateFireFlicker(time);
+    updateParticles(deltaTime);
   };
 
   const dispose = () => {
@@ -181,6 +397,11 @@ export function createCampfireSystem(
     campfireSystem.dispose();
     campfireToonMaterials.forEach(material => material.dispose());
     campfireToonMaterials.length = 0;
+    
+    // Clean up particle system
+    particleGeometry.dispose();
+    particleMaterial.dispose();
+    particles.length = 0;
   };
 
   return {

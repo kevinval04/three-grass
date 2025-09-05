@@ -19,6 +19,10 @@ export interface GrassSystem {
     noiseScale?: number;
     frequency?: number;
     turbulence?: number;
+    waveSpeed?: number;
+    waveWidth?: number;
+    waveIntensity?: number;
+    waveRotation?: number;
   }) => void;
   addExclusionZone: (zone: GrassExclusionZone) => void;
 }
@@ -35,19 +39,22 @@ function createGrassShaderMaterial(
     uniform float noiseScale;
     uniform float windFrequency;
     uniform float turbulence;
+    uniform float waveSpeed;
+    uniform float waveWidth;
+    uniform float waveIntensity;
+    uniform float waveRotation;
     
     varying vec3 vNormal;
     varying vec3 vPosition;
     varying vec2 vUv;
     varying vec3 vWorldPosition;
+    varying float vWindWaveFactor;
 
     void main() {
       vec4 instancePosition = instanceMatrix * vec4(position, 1.0);
       vec4 worldPosition = modelMatrix * instancePosition;
 
-      // Calculate height factor to ensure bottom is completely unaffected
-      // Assumes grass blade height is around 2.0 units - adjust the divisor as needed
-      float heightFactor = clamp(instancePosition.y / 2.0, 0.0, 1.0);
+      float heightFactor = clamp(position.y / 0.3, 0.0, 1.0);
 
       // Only affect the top part of the blade (e.g., top 40%)
       float tipFactor = smoothstep(0.6, 1.0, heightFactor);
@@ -55,12 +62,30 @@ function createGrassShaderMaterial(
       // Simple sin-based wind, only at the tip
       float wind = sin(time * windFrequency + instancePosition.x * 0.5 + instancePosition.z * 0.5) * windStrength * tipFactor;
 
-      // Wind direction
+      // Wind wave effect - creates a curved arc flowing across the field
       vec2 windDir = normalize(windDirection);
+      
+      // Apply rotation to the wave direction
+      float cosRot = cos(waveRotation);
+      float sinRot = sin(waveRotation);
+      vec2 rotatedWindDir = vec2(
+        windDir.x * cosRot - windDir.y * sinRot,
+        windDir.x * sinRot + windDir.y * cosRot
+      );
+      
+      float waveDistance = dot(instancePosition.xz, rotatedWindDir) + time * waveSpeed;
+      float waveEffect = exp(-pow(mod(waveDistance, waveWidth * 2.0) - waveWidth, 2.0) / (waveWidth * 0.3));
+      float windWave = waveEffect * waveIntensity * tipFactor;
+      
+      // Store wind wave factor for fragment shader
+      vWindWaveFactor = waveEffect;
 
-      // Apply wind to world position (x and z)
-      worldPosition.x += windDir.x * wind;
-      worldPosition.z += windDir.y * wind;
+      // Combine regular wind and wind wave
+      float totalWind = wind + windWave;
+
+      // Apply wind to world position (x and z) using rotated direction
+      worldPosition.x += rotatedWindDir.x * totalWind;
+      worldPosition.z += rotatedWindDir.y * totalWind;
 
       vNormal = normalize(normalMatrix * mat3(instanceMatrix) * normal);
       vPosition = (viewMatrix * worldPosition).xyz;
@@ -80,6 +105,7 @@ function createGrassShaderMaterial(
     varying vec3 vPosition;
     varying vec2 vUv;
     varying vec3 vWorldPosition;
+    varying float vWindWaveFactor;
     
     void main() {
       vec2 worldUV = (vWorldPosition.xz + planeSize * 0.5) / planeSize;
@@ -100,7 +126,14 @@ function createGrassShaderMaterial(
       vec3 finalColor = mix(lerpedColor, lerpedColor, 1.0-shadowIntensity);
 
       // Increase brightness by multiplying color
-      gl_FragColor = vec4(finalColor * 1.2, 1.0);
+      float globalHeight = (vWorldPosition.y + 2.7469) / 3.9002;
+      float brightness = 0.6 + pow(globalHeight * 0.5, 0.1);
+      
+      // Add brightness boost for wind wave effect
+      float windWaveBrightness = vWindWaveFactor * 0.35;
+      brightness += windWaveBrightness;
+      
+      gl_FragColor = vec4(finalColor * brightness, 1.0);
     }
   `;
 
@@ -114,11 +147,15 @@ function createGrassShaderMaterial(
       lightDirection: { value: new THREE.Vector3(5, 15, 15).normalize() },
       lightIntensity: { value: 1.0 },
       time: { value: 0.0 },
-      windStrength: { value: 0.1 },
+      windStrength: { value: 0.08 },
       windDirection: { value: new THREE.Vector2(1.0, 0.3) },
       noiseScale: { value: 0.2 },
       windFrequency: { value: 2 },
       turbulence: { value: 0.1 },
+      waveSpeed: { value: -9.0 },
+      waveWidth: { value: 40.0 },
+      waveIntensity: { value: .35 },
+      waveRotation: { value: 0.0 },
     },
     
     side: THREE.DoubleSide,
@@ -128,11 +165,12 @@ function createGrassShaderMaterial(
 function loadPlaneFromGLTF(
   scene: THREE.Scene,
   grassTexture: THREE.Texture,
+  waterTexture: THREE.Texture,
   onPlaneLoaded?: (plane: THREE.Mesh, planeSize: number, planeArea: number) => void
 ): void {
   const loader = new GLTFLoader();
 
-  loader.load("/surface2.glb", (gltf) => {
+  loader.load("/surface.glb", (gltf) => {
     const surfaceMesh = gltf.scene.children[0];
 
     if (surfaceMesh && surfaceMesh.type === "Mesh" && surfaceMesh instanceof THREE.Mesh) {
@@ -176,12 +214,87 @@ function isPositionInExclusionZone(position: THREE.Vector3, exclusionZones: Gras
   return false;
 }
 
+// Cache for texture data to avoid recreating canvas each time
+let textureDataCache: Map<THREE.Texture, ImageData> = new Map();
+
+function getTextureData(texture: THREE.Texture): ImageData | null {
+  if (textureDataCache.has(texture)) {
+    return textureDataCache.get(texture)!;
+  }
+
+  if (!texture.image) {
+    console.warn('Texture has no image data');
+    return null;
+  }
+
+  const canvas = document.createElement('canvas');
+  const ctx = canvas.getContext('2d');
+  
+  if (!ctx) {
+    console.warn('Could not get 2D context');
+    return null;
+  }
+
+  canvas.width = texture.image.width;
+  canvas.height = texture.image.height;
+  ctx.drawImage(texture.image, 0, 0);
+  
+  const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  textureDataCache.set(texture, imageData);
+  
+  return imageData;
+}
+
+function sampleWaterTexture(position: THREE.Vector3, waterTexture: THREE.Texture, plane: THREE.Mesh): boolean {
+  // Get the plane's geometry and compute UV coordinates from world position
+  const geometry = plane.geometry as THREE.BufferGeometry;
+  const boundingBox = geometry.boundingBox;
+  
+  if (!boundingBox) {
+    console.warn('Plane geometry has no bounding box');
+    return false; // Allow grass if we can't sample
+  }
+
+  // Convert world position to local position relative to the plane
+  const localPosition = position.clone();
+  plane.worldToLocal(localPosition);
+
+  // Convert local position to UV coordinates (0-1 range)
+  const uvX = (localPosition.x - boundingBox.min.x) / (boundingBox.max.x - boundingBox.min.x);
+  const uvY = (localPosition.z - boundingBox.min.z) / (boundingBox.max.z - boundingBox.min.z);
+
+  // Clamp UV coordinates to [0, 1] range
+  const clampedUvX = Math.max(0, Math.min(1, uvX));
+  const clampedUvY = Math.max(0, Math.min(1, uvY));
+
+  // Get cached texture data
+  const imageData = getTextureData(waterTexture);
+  if (!imageData) {
+    return false; // Allow grass if we can't sample
+  }
+
+  // Get pixel at UV coordinates
+  const pixelX = Math.floor(clampedUvX * (imageData.width - 1));
+  const pixelY = Math.floor(clampedUvY * (imageData.height - 1));
+  
+  // Calculate pixel index in the ImageData array
+  const pixelIndex = (pixelY * imageData.width + pixelX) * 4; // 4 bytes per pixel (RGBA)
+  const red = imageData.data[pixelIndex];
+  
+  // If the pixel is white (or close to white), exclude grass
+  // Assuming white = 255, black = 0 in the texture
+  const isWhite = red > 128; // Threshold for white vs black
+  
+  return isWhite; // Return true if should exclude grass (white pixel)
+}
+
 function createGrassInstances(
   scene: THREE.Scene,
   plane: THREE.Mesh,
   grassMaterial: THREE.ShaderMaterial,
   planeArea: number,
-  exclusionZones: GrassExclusionZone[] = []
+  exclusionZones: GrassExclusionZone[] = [],
+  waterTexture?: THREE.Texture | null
 ): void {
   const loader = new GLTFLoader();
   loader.load("/grass-patch.glb", (gltf) => {
@@ -204,6 +317,10 @@ function createGrassInstances(
       const scale = new THREE.Vector3();
       const rotation = new THREE.Euler();
 
+      // Track min and max world Y positions
+      let minWorldY = Infinity;
+      let maxWorldY = -Infinity;
+
       let instanceIndex = 0;
       for (let i = 0; i < 60 * 60 * GRASS_DENSITY && instanceIndex < instanceCount; i++) {
         sampler.sample(position);
@@ -215,14 +332,26 @@ function createGrassInstances(
           continue;
         }
 
+        // Skip this position if water texture indicates exclusion (white pixel)
+        if (waterTexture && sampleWaterTexture(position, waterTexture, plane)) {
+          continue;
+        }
+
         const s = biasedRandomScale(1, 2.5);
         scale.set(s, s, s);
         rotation.set(0, Math.random() * Math.PI * 2, 0);
+
+        // Track the world Y position for this grass instance
+        minWorldY = Math.min(minWorldY, position.y);
+        maxWorldY = Math.max(maxWorldY, position.y);
 
         matrix.compose(position, new THREE.Quaternion().setFromEuler(rotation), scale);
         instancedMesh.setMatrixAt(instanceIndex, matrix);
         instanceIndex++;
       }
+
+      // Log the min and max world Y positions of all grass instances
+      console.log(`Grass World Y Positions - Min: ${minWorldY.toFixed(4)}, Max: ${maxWorldY.toFixed(4)}, Range: ${(maxWorldY - minWorldY).toFixed(4)}`);
       
       // Set remaining instances to invisible if we didn't fill all slots
       for (let i = instanceIndex; i < instanceCount; i++) {
@@ -236,25 +365,29 @@ function createGrassInstances(
   });
 }
 
-export function createGrassSystem(scene: THREE.Scene, initialExclusionZones: GrassExclusionZone[] = []): GrassSystem {
+export function createGrassSystem(scene: THREE.Scene, initialExclusionZones: GrassExclusionZone[] = [], waterTexture?: THREE.Texture | null): GrassSystem {
   const textureLoader = new THREE.TextureLoader();
-  const grassTexture = textureLoader.load("/grass.png");
+  const grassTexture = textureLoader.load("/grass1.png");
 
   grassTexture.colorSpace = THREE.SRGBColorSpace;
   grassTexture.magFilter = THREE.LinearFilter;
   grassTexture.minFilter = THREE.LinearMipmapLinearFilter;
   grassTexture.generateMipmaps = true;
-  grassTexture.flipY = true;
+  grassTexture.flipY = false; // default for GLTF-converted meshes is often false
+  grassTexture.rotation = 0;
+  grassTexture.center.set(0.5, 0.5);
+  grassTexture.repeat.set(1, 1);
+  grassTexture.offset.set(0, 0);
 
   let grassMaterial: THREE.ShaderMaterial | null = null;
   let plane: THREE.Mesh | null = null;
   let exclusionZones: GrassExclusionZone[] = [...initialExclusionZones];
 
-  loadPlaneFromGLTF(scene, grassTexture, (loadedPlane, planeSize, planeArea) => {
+  loadPlaneFromGLTF(scene, grassTexture, waterTexture as THREE.Texture, (loadedPlane, planeSize, planeArea) => {
     plane = loadedPlane;
     const textureRepeat = new THREE.Vector2(1, 1);
     grassMaterial = createGrassShaderMaterial(grassTexture, planeSize, textureRepeat);
-    createGrassInstances(scene, plane, grassMaterial, planeArea, exclusionZones);
+    createGrassInstances(scene, plane, grassMaterial, planeArea, exclusionZones, waterTexture);
   });
 
   const updateWind = (time: number) => {
@@ -269,6 +402,10 @@ export function createGrassSystem(scene: THREE.Scene, initialExclusionZones: Gra
     noiseScale?: number;
     frequency?: number;
     turbulence?: number;
+    waveSpeed?: number;
+    waveWidth?: number;
+    waveIntensity?: number;
+    waveRotation?: number;
   }) => {
     if (!grassMaterial) return;
     
@@ -286,6 +423,18 @@ export function createGrassSystem(scene: THREE.Scene, initialExclusionZones: Gra
     }
     if (params.turbulence !== undefined) {
       grassMaterial.uniforms.turbulence.value = params.turbulence;
+    }
+    if (params.waveSpeed !== undefined) {
+      grassMaterial.uniforms.waveSpeed.value = params.waveSpeed;
+    }
+    if (params.waveWidth !== undefined) {
+      grassMaterial.uniforms.waveWidth.value = params.waveWidth;
+    }
+    if (params.waveIntensity !== undefined) {
+      grassMaterial.uniforms.waveIntensity.value = params.waveIntensity;
+    }
+    if (params.waveRotation !== undefined) {
+      grassMaterial.uniforms.waveRotation.value = params.waveRotation;
     }
   };
 
