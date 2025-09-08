@@ -88,8 +88,8 @@ function initializeScene() {
 
   fireflySystem = createFireflySystem(scene, camera);
 
-  const campfirePosition = new THREE.Vector3(4, 0.8, 3); // Around infront of the camera
-  const campfireRotation = new THREE.Euler(-0.05, 0, 0);
+  const campfirePosition = new THREE.Vector3(4, 0.85, 3); // Around infront of the camera
+  const campfireRotation = new THREE.Euler(0, 0, 0);
   campfireSystem = createCampfireSystem(
     scene,
     campfirePosition,
@@ -101,13 +101,14 @@ function initializeScene() {
     radius: 2.5,
   };
 
-  grassSystem = createGrassSystem(scene, [campfireExclusionZone], assets.textures.get('water') || null);
+  // Initialize water system first so it can be passed to grass system
+  waterSystem = createWaterSystem(scene, assets.textures.get('waterstripes'));
 
-  // Initialize water system
-  waterSystem = createWaterSystem(scene);
+  // Create grass system with water system for foam synchronization
+  grassSystem = createGrassSystem(scene, [campfireExclusionZone], assets.textures.get('water') || null, waterSystem);
 
   postProcessing = createPostProcessing(renderer, scene, camera, {
-    strength: 0.1,
+    strength: 0.12,
     radius: 0.1,
     threshold: 0.8,
   });

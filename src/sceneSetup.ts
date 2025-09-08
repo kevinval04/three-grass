@@ -48,7 +48,7 @@ export function setupLighting(scene: THREE.Scene): void {
   const ambientLight = new THREE.AmbientLight(0x404040, 1.5); // Increased for better visibility
   scene.add(ambientLight);
 
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 5.0);
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
   directionalLight.position.set(0, 100, 20); // Moved to front and lower
   directionalLight.castShadow = true;
   directionalLight.shadow.mapSize.width = 2048;
@@ -66,7 +66,7 @@ export function createSkybox(scene: THREE.Scene): void {
   const textureLoader = new THREE.TextureLoader();
   
   // Load skybox texture
-  const skyboxTexture = textureLoader.load("/sky_16_2k.png");
+  const skyboxTexture = textureLoader.load("/sky_13_2k.png");
   skyboxTexture.mapping = THREE.EquirectangularReflectionMapping;
   skyboxTexture.wrapS = THREE.RepeatWrapping;
   skyboxTexture.wrapT = THREE.ClampToEdgeWrapping;

@@ -1,6 +1,8 @@
 import * as THREE from "three";
 import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshSurfaceSampler } from "three/addons/math/MeshSurfaceSampler.js";
+import { createTerrainMaterial } from "./terrainMaterial";
+import type { WaterSystem } from "./waterSystem";
 
 export const GRASS_DENSITY = 12;
 
@@ -165,7 +167,7 @@ function createGrassShaderMaterial(
 function loadPlaneFromGLTF(
   scene: THREE.Scene,
   grassTexture: THREE.Texture,
-  waterTexture: THREE.Texture,
+  waterSystem: WaterSystem | null,
   onPlaneLoaded?: (plane: THREE.Mesh, planeSize: number, planeArea: number) => void
 ): void {
   const loader = new GLTFLoader();
@@ -185,11 +187,19 @@ function loadPlaneFromGLTF(
       const planeSize = Math.max(planeWidth, planeHeight);
       const planeArea = planeWidth * planeHeight;
 
-      const planeMaterial = new THREE.MeshStandardMaterial({ map: grassTexture });
+      // Use foam-enabled material if water system is available, otherwise fallback to standard
+      console.log("🏞️ Loading terrain with water system:", waterSystem ? "YES" : "NO");
+      const groundTexture = new THREE.TextureLoader().load("/ground.002.png");
+      groundTexture.flipY = false;
+      const planeMaterial = waterSystem 
+        ? createTerrainMaterial(groundTexture, waterSystem.uniforms)
+        : new THREE.MeshStandardMaterial({ map: groundTexture });
+      
       const plane = new THREE.Mesh(geometry, planeMaterial);
       plane.position.set(0, 0, 0);
       plane.receiveShadow = true;
       plane.castShadow = false;
+      plane.receiveShadow = true;
 
       scene.add(plane);
 
@@ -365,9 +375,9 @@ function createGrassInstances(
   });
 }
 
-export function createGrassSystem(scene: THREE.Scene, initialExclusionZones: GrassExclusionZone[] = [], waterTexture?: THREE.Texture | null): GrassSystem {
+export function createGrassSystem(scene: THREE.Scene, initialExclusionZones: GrassExclusionZone[] = [], waterTexture?: THREE.Texture | null, waterSystem?: WaterSystem | null): GrassSystem {
   const textureLoader = new THREE.TextureLoader();
-  const grassTexture = textureLoader.load("/grass1.png");
+  const grassTexture = textureLoader.load("/grass.png");
 
   grassTexture.colorSpace = THREE.SRGBColorSpace;
   grassTexture.magFilter = THREE.LinearFilter;
@@ -383,7 +393,7 @@ export function createGrassSystem(scene: THREE.Scene, initialExclusionZones: Gra
   let plane: THREE.Mesh | null = null;
   let exclusionZones: GrassExclusionZone[] = [...initialExclusionZones];
 
-  loadPlaneFromGLTF(scene, grassTexture, waterTexture as THREE.Texture, (loadedPlane, planeSize, planeArea) => {
+  loadPlaneFromGLTF(scene, grassTexture, waterSystem || null, (loadedPlane, planeSize, planeArea) => {
     plane = loadedPlane;
     const textureRepeat = new THREE.Vector2(1, 1);
     grassMaterial = createGrassShaderMaterial(grassTexture, planeSize, textureRepeat);
