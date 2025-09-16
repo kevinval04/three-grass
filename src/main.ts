@@ -10,6 +10,7 @@ import { createFireflySystem, type FireflySystem } from "./fireflySystem";
 import { createCampfireSystem } from "./campfire";
 import { createPostProcessing } from "./postProcessing";
 import { createWaterSystem, type WaterSystem } from "./waterSystem";
+import { createCloudSystem, type CloudSystem } from "./cloudSystem";
 import type { CampfireSystem } from "./campfire";
 import type { PostProcessingSetup } from "./postProcessing";
 import {
@@ -41,6 +42,7 @@ let fireflySystem: FireflySystem;
 let campfireSystem: CampfireSystem;
 let grassSystem: GrassSystem;
 let waterSystem: WaterSystem;
+let cloudSystem: CloudSystem;
 let postProcessing: PostProcessingSetup;
 let assets: AssetCollection;
 let clock: THREE.Clock;
@@ -83,6 +85,13 @@ function initializeScene() {
 
   createSkyboxWithTexture(scene, assets.skybox);
 
+  // Initialize cloud system
+  const cloudTexture = assets.textures.get('cloud');
+  if (cloudTexture) {
+    cloudSystem = createCloudSystem(scene, cloudTexture);
+  }
+
+
   // Initialize clock for delta time calculations
   clock = new THREE.Clock();
 
@@ -107,6 +116,8 @@ function initializeScene() {
   // Create grass system with water system for foam synchronization
   grassSystem = createGrassSystem(scene, [campfireExclusionZone], assets.textures.get('water') || null, waterSystem);
 
+
+
   postProcessing = createPostProcessing(renderer, scene, camera, {
     strength: 0.12,
     radius: 0.1,
@@ -122,7 +133,7 @@ function initializeScene() {
   controls.enableRotate = true;
   controls.enablePan = false; // Disable panning for better UX
   controls.minDistance = 3; // Minimum zoom distance
-  controls.maxDistance = 15; // Maximum zoom distance
+  controls.maxDistance = 30; // Maximum zoom distance
   controls.minPolarAngle = Math.PI / 6; // Limit vertical rotation (30 degrees from top)
   controls.maxPolarAngle = Math.PI / 2.2; // Limit vertical rotation (about 80 degrees from top)
 
@@ -214,6 +225,11 @@ function animate() {
 
   grassSystem.updateWind(elapsedTime);
   
+  // Update flower system if it exists
+  if (grassSystem.flowerSystem) {
+    grassSystem.flowerSystem.update(camera, elapsedTime);
+  }
+  
   // Example: Rotate the wave effect over time
   // You can adjust this rotation speed or make it interactive
   const waveRotationSpeed = 0.1; // radians per second
@@ -224,8 +240,15 @@ function animate() {
   fireflySystem.update(elapsedTime);
 
   campfireSystem.update(elapsedTime);
-  
+
   waterSystem.update(elapsedTime);
+
+  // Update cloud system
+  if (cloudSystem) {
+    cloudSystem.update(camera, elapsedTime, clock.getDelta());
+  }
+
+
   postProcessing.render();
 }
 

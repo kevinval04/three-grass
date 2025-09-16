@@ -10,7 +10,7 @@ export interface WaterSystem {
 
 export function createWaterSystem(scene: THREE.Scene, waterStripesTexture?: THREE.Texture): WaterSystem {
   // Create water plane geometry with more segments for better wave deformation
-  const waterGeometry = new THREE.PlaneGeometry(60, 70, 80, 64);
+  const waterGeometry = new THREE.PlaneGeometry(60, 30, 80, 64);
   
   // Vertex shader for water waves
   const vertexShader = `
@@ -127,6 +127,7 @@ export function createWaterSystem(scene: THREE.Scene, waterStripesTexture?: THRE
   // Position the water plane
   waterMesh.rotation.x = -Math.PI / 2; // Rotate to be horizontal
   waterMesh.position.y = -0.5; // Position below ground level
+  waterMesh.position.z = 15;
   waterMesh.receiveShadow = true;
   
   // Add to scene

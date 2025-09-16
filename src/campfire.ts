@@ -91,7 +91,7 @@ export function createCampfireSystem(
   campfireGroup.add(campfireLight); // Add to group instead of scene
 
   // Fire flicker properties
-  const baseIntensity = 4.0; // Increased base intensity
+  const baseIntensity = 10.0; // Increased base intensity
   const baseColor = new THREE.Color(0xff4400);
   const flickerSpeed = 2.8; // Faster flicker
   const intensityVariation = 0.7; // Stronger variation

@@ -34,7 +34,7 @@ export function createSceneSetup(canvas: HTMLCanvasElement): SceneSetup {
   // Set proper color space for accurate color representation
   renderer.outputColorSpace = THREE.SRGBColorSpace;
   // renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  // renderer.toneMappingExposure = 1.0;
+  // renderer.toneMappingExposure = .5;
 
   // Camera position - lowered for better view
   camera.position.set(4, 1.76, 6);
@@ -48,7 +48,7 @@ export function setupLighting(scene: THREE.Scene): void {
   const ambientLight = new THREE.AmbientLight(0x404040, 1.5); // Increased for better visibility
   scene.add(ambientLight);
 
-  const directionalLight = new THREE.DirectionalLight(0xffffff, 2);
+  const directionalLight = new THREE.DirectionalLight(0xffffff, 4.5);
   directionalLight.position.set(0, 100, 20); // Moved to front and lower
   directionalLight.castShadow = true;
   directionalLight.shadow.mapSize.width = 2048;

@@ -74,12 +74,11 @@ export class AssetLoader {
       { type: 'texture', path: '/fire/fire2.png', name: 'fire' },
       { type: 'texture', path: '/water.png', name: 'water' },
       { type: 'texture', path: '/waterstripes.png', name: 'waterstripes' },
-      
-      // Ground textures
-      { type: 'texture', path: '/ground/base.jpg', name: 'groundBase' },
-      { type: 'texture', path: '/ground/normal.png', name: 'groundNormal' },
-      { type: 'texture', path: '/ground/roughness.jpg', name: 'groundRoughness' },
-      { type: 'texture', path: '/ground/metallic.jpg', name: 'groundMetallic' },
+      { type: 'texture', path: '/cloud.png', name: 'cloud' },
+      { type: 'texture', path: '/flowers/flowers2.png', name: 'flowers' },
+      { type: 'texture', path: '/flowers/flowers2Gradient.png', name: 'flowersGradient' },
+      { type: 'texture', path: '/flowers/flowers2RGB.png', name: 'flowersRGB' },
+      { type: 'texture', path: '/flowers/flowerInstanceMap.png', name: 'flowerInstanceMap' },
       
       // Models
       { type: 'model', path: '/campfire.glb', name: 'campfire' },
@@ -136,6 +135,18 @@ export class AssetLoader {
               texture.minFilter = THREE.LinearFilter;
               texture.flipY = false;
               texture.colorSpace = THREE.LinearSRGBColorSpace;
+            } else if (name === 'cloud') {
+              texture.colorSpace = THREE.SRGBColorSpace;
+              texture.magFilter = THREE.LinearFilter;
+              texture.minFilter = THREE.LinearMipmapLinearFilter;
+              texture.generateMipmaps = true;
+              texture.flipY = true;
+            } else if (name.startsWith('flowers')) {
+              texture.colorSpace = THREE.SRGBColorSpace;
+              texture.magFilter = THREE.LinearFilter;
+              texture.minFilter = THREE.LinearMipmapLinearFilter;
+              texture.generateMipmaps = true;
+              texture.flipY = true;
             } else if (name.startsWith('ground')) {
               texture.wrapS = THREE.RepeatWrapping;
               texture.wrapT = THREE.RepeatWrapping;

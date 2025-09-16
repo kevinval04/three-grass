@@ -3,6 +3,8 @@ import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
 import { MeshSurfaceSampler } from "three/addons/math/MeshSurfaceSampler.js";
 import { createTerrainMaterial } from "./terrainMaterial";
 import type { WaterSystem } from "./waterSystem";
+import { biasedRandomScale } from "./utils";
+import { createInstancedFlowers, type FlowerSystem } from "./flowerSystem";
 
 export const GRASS_DENSITY = 12;
 
@@ -14,6 +16,7 @@ export interface GrassExclusionZone {
 export interface GrassSystem {
   plane: THREE.Mesh | null;
   grassMaterial: THREE.ShaderMaterial;
+  flowerSystem: FlowerSystem | null;
   updateWind: (time: number) => void;
   setWindParameters: (params: {
     strength?: number;
@@ -114,28 +117,41 @@ function createGrassShaderMaterial(
       
       vec3 surfaceColor = texture2D(grassTexture, worldUV).rgb;
 
-      // Color gradient from root (texture color) to tip (slightly lighter/greener)
-      vec3 rootColor = surfaceColor;  // Use exact texture color at base
+      // Color gradient: from root (texture color) to tip (lighter/greener) in bottom 30%, then back to root color
+      vec3 rootColor = surfaceColor;
       vec3 tipColor = vec3(0.2575, 0.4557, 0.05935);
-      // vec3 tipColor = vec3(1.0, 0.0, 0.0);
-      float tipColorStrength = 1.0;
 
-      float b = (1.0 - vUv.y) * tipColorStrength;
-      vec3 lerpedColor = mix(rootColor, tipColor, distance(vec2(0.0, vUv.y), vec2(0.0,1.0)));
+      float gradientPos = vUv.y;
+      float t = 0.0;
+      if (gradientPos < 0.3) {
+        t = gradientPos / 0.3;
+        // Blend from rootColor to tipColor in the first 30%
+        t = clamp(t, 0.0, 1.0);
+        vec3 lerpedColor = mix(rootColor, tipColor, t);
+        float shadowIntensity = 0.14;
+        vec3 finalColor = mix(lerpedColor, lerpedColor, 1.0-shadowIntensity);
 
-      float shadowIntensity = 0.14;
-      
-      vec3 finalColor = mix(lerpedColor, lerpedColor, 1.0-shadowIntensity);
+        float globalHeight = (vWorldPosition.y + 2.7469) / 3.9002;
+        float brightness = 0.6 + pow(globalHeight * 0.5, 0.1);
+        float windWaveBrightness = vWindWaveFactor * 0.35;
+        brightness += windWaveBrightness;
 
-      // Increase brightness by multiplying color
-      float globalHeight = (vWorldPosition.y + 2.7469) / 3.9002;
-      float brightness = 0.6 + pow(globalHeight * 0.5, 0.1);
-      
-      // Add brightness boost for wind wave effect
-      float windWaveBrightness = vWindWaveFactor * 0.35;
-      brightness += windWaveBrightness;
-      
-      gl_FragColor = vec4(finalColor * brightness, 1.0);
+        gl_FragColor = vec4(finalColor * brightness, 1.0);
+      } else {
+        // From 30% to tip, blend back from tipColor to rootColor
+        t = (gradientPos - 0.3) / (1.0 - 0.3);
+        t = clamp(t, 0.0, 1.0);
+        vec3 lerpedColor = mix(tipColor, rootColor, t);
+        float shadowIntensity = 0.14;
+        vec3 finalColor = mix(lerpedColor, lerpedColor, 1.0-shadowIntensity);
+
+        float globalHeight = (vWorldPosition.y + 2.7469) / 3.9002;
+        float brightness = 0.6 + pow(globalHeight * 0.5, 0.1);
+        float windWaveBrightness = vWindWaveFactor * 0.35;
+        brightness += windWaveBrightness;
+
+        gl_FragColor = vec4(finalColor * brightness, 1.0);
+      }
     }
   `;
 
@@ -156,26 +172,37 @@ function createGrassShaderMaterial(
       turbulence: { value: 0.1 },
       waveSpeed: { value: -9.0 },
       waveWidth: { value: 40.0 },
-      waveIntensity: { value: .35 },
+      waveIntensity: { value: 0.35 },
       waveRotation: { value: 0.0 },
     },
-    
+
     side: THREE.DoubleSide,
   });
 }
 
 function loadPlaneFromGLTF(
   scene: THREE.Scene,
-  grassTexture: THREE.Texture,
   waterSystem: WaterSystem | null,
-  onPlaneLoaded?: (plane: THREE.Mesh, planeSize: number, planeArea: number) => void
+  onPlaneLoaded?: (
+    plane: THREE.Mesh,
+    planeSize: number,
+    planeArea: number
+  ) => void
 ): void {
   const loader = new GLTFLoader();
 
   loader.load("/surface.glb", (gltf) => {
     const surfaceMesh = gltf.scene.children[0];
 
-    if (surfaceMesh && surfaceMesh.type === "Mesh" && surfaceMesh instanceof THREE.Mesh) {
+    if (
+      surfaceMesh &&
+      surfaceMesh.type === "Mesh" &&
+      surfaceMesh instanceof THREE.Mesh
+    ) {
+      console.log(surfaceMesh.geometry);
+      if (surfaceMesh.geometry.getAttribute('flower')) {
+        console.log("WE FOUND A FLOWER ATTRIBUTE", surfaceMesh.geometry.getAttribute('flower'));
+      }
       const geometry: THREE.BufferGeometry = surfaceMesh.geometry.clone();
       geometry.applyMatrix4(surfaceMesh.matrixWorld);
       geometry.computeVertexNormals();
@@ -188,13 +215,17 @@ function loadPlaneFromGLTF(
       const planeArea = planeWidth * planeHeight;
 
       // Use foam-enabled material if water system is available, otherwise fallback to standard
-      console.log("🏞️ Loading terrain with water system:", waterSystem ? "YES" : "NO");
-      const groundTexture = new THREE.TextureLoader().load("/ground.002.png");
+      console.log(
+        "🏞️ Loading terrain with water system:",
+        waterSystem ? "YES" : "NO"
+      );
+      const groundTexture = new THREE.TextureLoader().load("/grass1.png");
+      groundTexture.colorSpace = THREE.SRGBColorSpace;
       groundTexture.flipY = false;
-      const planeMaterial = waterSystem 
+      const planeMaterial = waterSystem
         ? createTerrainMaterial(groundTexture, waterSystem.uniforms)
         : new THREE.MeshStandardMaterial({ map: groundTexture });
-      
+
       const plane = new THREE.Mesh(geometry, planeMaterial);
       plane.position.set(0, 0, 0);
       plane.receiveShadow = true;
@@ -210,11 +241,10 @@ function loadPlaneFromGLTF(
   });
 }
 
-function biasedRandomScale(min: number, max: number): number {
-  return min + (max - min) * Math.pow(Math.random(), 2);
-}
-
-function isPositionInExclusionZone(position: THREE.Vector3, exclusionZones: GrassExclusionZone[]): boolean {
+export function isPositionInExclusionZone(
+  position: THREE.Vector3,
+  exclusionZones: GrassExclusionZone[]
+): boolean {
   for (const zone of exclusionZones) {
     const distance = position.distanceTo(zone.center);
     if (distance <= zone.radius) {
@@ -233,35 +263,39 @@ function getTextureData(texture: THREE.Texture): ImageData | null {
   }
 
   if (!texture.image) {
-    console.warn('Texture has no image data');
+    console.warn("Texture has no image data");
     return null;
   }
 
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
   if (!ctx) {
-    console.warn('Could not get 2D context');
+    console.warn("Could not get 2D context");
     return null;
   }
 
   canvas.width = texture.image.width;
   canvas.height = texture.image.height;
   ctx.drawImage(texture.image, 0, 0);
-  
+
   const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
   textureDataCache.set(texture, imageData);
-  
+
   return imageData;
 }
 
-function sampleWaterTexture(position: THREE.Vector3, waterTexture: THREE.Texture, plane: THREE.Mesh): boolean {
+function sampleWaterTexture(
+  position: THREE.Vector3,
+  waterTexture: THREE.Texture,
+  plane: THREE.Mesh
+): boolean {
   // Get the plane's geometry and compute UV coordinates from world position
   const geometry = plane.geometry as THREE.BufferGeometry;
   const boundingBox = geometry.boundingBox;
-  
+
   if (!boundingBox) {
-    console.warn('Plane geometry has no bounding box');
+    console.warn("Plane geometry has no bounding box");
     return false; // Allow grass if we can't sample
   }
 
@@ -270,8 +304,12 @@ function sampleWaterTexture(position: THREE.Vector3, waterTexture: THREE.Texture
   plane.worldToLocal(localPosition);
 
   // Convert local position to UV coordinates (0-1 range)
-  const uvX = (localPosition.x - boundingBox.min.x) / (boundingBox.max.x - boundingBox.min.x);
-  const uvY = (localPosition.z - boundingBox.min.z) / (boundingBox.max.z - boundingBox.min.z);
+  const uvX =
+    (localPosition.x - boundingBox.min.x) /
+    (boundingBox.max.x - boundingBox.min.x);
+  const uvY =
+    (localPosition.z - boundingBox.min.z) /
+    (boundingBox.max.z - boundingBox.min.z);
 
   // Clamp UV coordinates to [0, 1] range
   const clampedUvX = Math.max(0, Math.min(1, uvX));
@@ -286,15 +324,15 @@ function sampleWaterTexture(position: THREE.Vector3, waterTexture: THREE.Texture
   // Get pixel at UV coordinates
   const pixelX = Math.floor(clampedUvX * (imageData.width - 1));
   const pixelY = Math.floor(clampedUvY * (imageData.height - 1));
-  
+
   // Calculate pixel index in the ImageData array
   const pixelIndex = (pixelY * imageData.width + pixelX) * 4; // 4 bytes per pixel (RGBA)
   const red = imageData.data[pixelIndex];
-  
+
   // If the pixel is white (or close to white), exclude grass
   // Assuming white = 255, black = 0 in the texture
   const isWhite = red > 128; // Threshold for white vs black
-  
+
   return isWhite; // Return true if should exclude grass (white pixel)
 }
 
@@ -310,14 +348,22 @@ function createGrassInstances(
   loader.load("/grass-patch.glb", (gltf) => {
     const grassMesh = gltf.scene.children[0];
 
-    if (grassMesh && grassMesh.type === "Mesh" && grassMesh instanceof THREE.Mesh) {
+    if (
+      grassMesh &&
+      grassMesh.type === "Mesh" &&
+      grassMesh instanceof THREE.Mesh
+    ) {
       const geometry: THREE.BufferGeometry = grassMesh.geometry.clone();
       geometry.applyMatrix4(grassMesh.matrixWorld);
       // geometry.computeVertexNormals();
       geometry.computeBoundingBox();
 
       const instanceCount = Math.floor(planeArea * GRASS_DENSITY);
-      const instancedMesh = new THREE.InstancedMesh(geometry, grassMaterial, instanceCount);
+      const instancedMesh = new THREE.InstancedMesh(
+        geometry,
+        grassMaterial,
+        instanceCount
+      );
       instancedMesh.castShadow = false;
       instancedMesh.receiveShadow = true;
 
@@ -327,12 +373,12 @@ function createGrassInstances(
       const scale = new THREE.Vector3();
       const rotation = new THREE.Euler();
 
-      // Track min and max world Y positions
-      let minWorldY = Infinity;
-      let maxWorldY = -Infinity;
-
       let instanceIndex = 0;
-      for (let i = 0; i < 60 * 60 * GRASS_DENSITY && instanceIndex < instanceCount; i++) {
+      for (
+        let i = 0;
+        i < 60 * 60 * GRASS_DENSITY && instanceIndex < instanceCount;
+        i++
+      ) {
         sampler.sample(position);
         plane.localToWorld(position);
         position.y += 0.01;
@@ -351,18 +397,15 @@ function createGrassInstances(
         scale.set(s, s, s);
         rotation.set(0, Math.random() * Math.PI * 2, 0);
 
-        // Track the world Y position for this grass instance
-        minWorldY = Math.min(minWorldY, position.y);
-        maxWorldY = Math.max(maxWorldY, position.y);
-
-        matrix.compose(position, new THREE.Quaternion().setFromEuler(rotation), scale);
+        matrix.compose(
+          position,
+          new THREE.Quaternion().setFromEuler(rotation),
+          scale
+        );
         instancedMesh.setMatrixAt(instanceIndex, matrix);
         instanceIndex++;
       }
 
-      // Log the min and max world Y positions of all grass instances
-      console.log(`Grass World Y Positions - Min: ${minWorldY.toFixed(4)}, Max: ${maxWorldY.toFixed(4)}, Range: ${(maxWorldY - minWorldY).toFixed(4)}`);
-      
       // Set remaining instances to invisible if we didn't fill all slots
       for (let i = instanceIndex; i < instanceCount; i++) {
         matrix.makeScale(0, 0, 0); // Make invisible
@@ -375,9 +418,14 @@ function createGrassInstances(
   });
 }
 
-export function createGrassSystem(scene: THREE.Scene, initialExclusionZones: GrassExclusionZone[] = [], waterTexture?: THREE.Texture | null, waterSystem?: WaterSystem | null): GrassSystem {
+export function createGrassSystem(
+  scene: THREE.Scene,
+  initialExclusionZones: GrassExclusionZone[] = [],
+  waterTexture?: THREE.Texture | null,
+  waterSystem?: WaterSystem | null
+): GrassSystem {
   const textureLoader = new THREE.TextureLoader();
-  const grassTexture = textureLoader.load("/grass.png");
+  const grassTexture = textureLoader.load("/grass1.png");
 
   grassTexture.colorSpace = THREE.SRGBColorSpace;
   grassTexture.magFilter = THREE.LinearFilter;
@@ -391,14 +439,32 @@ export function createGrassSystem(scene: THREE.Scene, initialExclusionZones: Gra
 
   let grassMaterial: THREE.ShaderMaterial | null = null;
   let plane: THREE.Mesh | null = null;
+  let flowerSystem: FlowerSystem | null = null;
   let exclusionZones: GrassExclusionZone[] = [...initialExclusionZones];
 
-  loadPlaneFromGLTF(scene, grassTexture, waterSystem || null, (loadedPlane, planeSize, planeArea) => {
-    plane = loadedPlane;
-    const textureRepeat = new THREE.Vector2(1, 1);
-    grassMaterial = createGrassShaderMaterial(grassTexture, planeSize, textureRepeat);
-    createGrassInstances(scene, plane, grassMaterial, planeArea, exclusionZones, waterTexture);
-  });
+  loadPlaneFromGLTF(
+    scene,
+    waterSystem || null,
+    (loadedPlane, planeSize, planeArea) => {
+      plane = loadedPlane;
+      const textureRepeat = new THREE.Vector2(1, 1);
+      grassMaterial = createGrassShaderMaterial(
+        grassTexture,
+        planeSize,
+        textureRepeat
+      );
+      createGrassInstances(
+        scene,
+        plane,
+        grassMaterial,
+        planeArea,
+        exclusionZones,
+        waterTexture
+      );
+      flowerSystem = createInstancedFlowers(scene, plane!);
+
+    }
+  );
 
   const updateWind = (time: number) => {
     if (grassMaterial && grassMaterial.uniforms.time) {
@@ -418,7 +484,7 @@ export function createGrassSystem(scene: THREE.Scene, initialExclusionZones: Gra
     waveRotation?: number;
   }) => {
     if (!grassMaterial) return;
-    
+
     if (params.strength !== undefined) {
       grassMaterial.uniforms.windStrength.value = params.strength;
     }
@@ -460,6 +526,9 @@ export function createGrassSystem(scene: THREE.Scene, initialExclusionZones: Gra
     },
     get grassMaterial() {
       return grassMaterial!;
+    },
+    get flowerSystem() {
+      return flowerSystem;
     },
     updateWind,
     setWindParameters,
