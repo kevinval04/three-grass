@@ -219,7 +219,7 @@ function loadPlaneFromGLTF(
         "🏞️ Loading terrain with water system:",
         waterSystem ? "YES" : "NO"
       );
-      const groundTexture = new THREE.TextureLoader().load("/grass1.png");
+      const groundTexture = new THREE.TextureLoader().load("/grass.png");
       groundTexture.colorSpace = THREE.SRGBColorSpace;
       groundTexture.flipY = false;
       const planeMaterial = waterSystem
@@ -425,7 +425,7 @@ export function createGrassSystem(
   waterSystem?: WaterSystem | null
 ): GrassSystem {
   const textureLoader = new THREE.TextureLoader();
-  const grassTexture = textureLoader.load("/grass1.png");
+  const grassTexture = textureLoader.load("/grass.png");
 
   grassTexture.colorSpace = THREE.SRGBColorSpace;
   grassTexture.magFilter = THREE.LinearFilter;
