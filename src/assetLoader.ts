@@ -74,7 +74,6 @@ export class AssetLoader {
       { type: 'texture', path: '/fire/fire2.png', name: 'fire' },
       { type: 'texture', path: '/water.png', name: 'water' },
       { type: 'texture', path: '/waterstripes.png', name: 'waterstripes' },
-      { type: 'texture', path: '/cloud.png', name: 'cloud' },
       { type: 'texture', path: '/flowers/flowers2.png', name: 'flowers' },
       { type: 'texture', path: '/flowers/flowers2Gradient.png', name: 'flowersGradient' },
       { type: 'texture', path: '/flowers/flowers2RGB.png', name: 'flowersRGB' },
