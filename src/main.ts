@@ -126,6 +126,7 @@ function initializeScene() {
   if (exploreButton) {
     exploreButton.addEventListener("click", () => {
       console.log("EXPLORE button clicked!");
+      window.open("https://www.youtube.com/watch?v=xvFZjo5PgG0", "_blank");
     });
   }
 
