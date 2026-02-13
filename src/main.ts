@@ -1,327 +1,452 @@
 import "./style.css";
-import {
-  createSceneSetup,
-  setupLighting,
-  createSkyboxWithTexture,
-} from "./sceneSetup";
-import { createGrassSystem } from "./grassSystem";
-import type { GrassExclusionZone, GrassSystem } from "./grassSystem";
-import { createFireflySystem, type FireflySystem } from "./fireflySystem";
-import { createCampfireSystem } from "./campfire";
-import { createPostProcessing } from "./postProcessing";
-import { createWaterSystem, type WaterSystem } from "./waterSystem";
-import type { CampfireSystem } from "./campfire";
-import type { PostProcessingSetup } from "./postProcessing";
-import {
-  AssetLoader,
-  type LoadingProgress,
-  type AssetCollection,
-} from "./assetLoader";
 import * as THREE from "three";
-import studio from "@theatre/studio";
-import { getProject } from "@theatre/core";
 
-if (import.meta.env.DEV) {
-  studio.initialize();
+const canvas = document.getElementById("three-canvas") as HTMLCanvasElement;
+const statusEl = document.getElementById("status") as HTMLDivElement;
+const rainButton = document.getElementById("rain-button") as HTMLButtonElement;
+
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color("#b9d2df");
+scene.fog = new THREE.Fog("#b9d2df", 20, 90);
+
+const camera = new THREE.PerspectiveCamera(
+  45,
+  window.innerWidth / window.innerHeight,
+  0.1,
+  300
+);
+camera.position.set(10, 7.5, 12);
+
+const clock = new THREE.Clock();
+const raycaster = new THREE.Raycaster();
+const pointer = new THREE.Vector2();
+
+const hemi = new THREE.HemisphereLight("#dff6ff", "#5f7f55", 0.6);
+scene.add(hemi);
+
+const sunLight = new THREE.DirectionalLight("#fff4d6", 1.7);
+sunLight.position.set(10, 18, 6);
+sunLight.castShadow = true;
+sunLight.shadow.mapSize.set(2048, 2048);
+sunLight.shadow.camera.left = -25;
+sunLight.shadow.camera.right = 25;
+sunLight.shadow.camera.top = 25;
+sunLight.shadow.camera.bottom = -25;
+scene.add(sunLight);
+
+const ground = new THREE.Mesh(
+  new THREE.CircleGeometry(38, 96),
+  new THREE.MeshStandardMaterial({ color: "#668951", roughness: 0.95, metalness: 0 })
+);
+ground.rotation.x = -Math.PI / 2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const soilMat = new THREE.MeshStandardMaterial({ color: "#795641", roughness: 0.95 });
+const moundGeo = new THREE.CylinderGeometry(0.6, 1.9, 0.9, 24);
+
+const mounds: THREE.Mesh[] = [];
+function addMound(pos: THREE.Vector3) {
+  const mound = new THREE.Mesh(moundGeo, soilMat.clone());
+  mound.position.copy(pos);
+  mound.castShadow = true;
+  mound.receiveShadow = true;
+  mound.userData.type = "mound";
+  scene.add(mound);
+  mounds.push(mound);
+  return mound;
 }
 
-// Loading screen elements
-const loadingScreen = document.getElementById("loading-screen") as HTMLElement;
-const progressBar = document.getElementById("progress-bar") as HTMLElement;
-const loadingPercentage = document.getElementById(
-  "loading-percentage"
-) as HTMLElement;
-const loadingAsset = document.getElementById("loading-asset") as HTMLElement;
-const startButton = document.getElementById("start-button") as HTMLElement;
+let activeMound: THREE.Mesh = addMound(new THREE.Vector3(0, 0.45, 0));
 
-// Global variables for scene components
-let scene: THREE.Scene;
-let camera: THREE.PerspectiveCamera;
-let renderer: THREE.WebGLRenderer;
-let fireflySystem: FireflySystem;
-let campfireSystem: CampfireSystem;
-let grassSystem: GrassSystem;
-let waterSystem: WaterSystem;
-let postProcessing: PostProcessingSetup;
-let assets: AssetCollection;
-let clock: THREE.Clock;
-let backgroundAudio: HTMLAudioElement;
+const windDirection = new THREE.Vector3(1, 0, 0.5).normalize();
 
-// Loading progress handler
-function onLoadingProgress(progress: LoadingProgress) {
-  const percentage = Math.round(progress.percentage);
-  progressBar.style.width = `${percentage}%`;
-  loadingPercentage.textContent = `${percentage}%`;
-  loadingAsset.textContent = `Loading ${progress.currentAsset}...`;
+function addGrass() {
+  const count = 14000;
+  const blade = new THREE.PlaneGeometry(0.12, 1.1, 1, 4);
+  blade.translate(0, 0.55, 0);
+  const mat = new THREE.MeshStandardMaterial({
+    color: "#7bb05a",
+    side: THREE.DoubleSide,
+    roughness: 0.9,
+  });
 
-  console.log(`Loading progress: ${percentage}% - ${progress.currentAsset}`);
-}
-
-// Assets loaded handler
-function onAssetsLoaded(loadedAssets: AssetCollection) {
-  console.log("All assets loaded, initializing scene...");
-  assets = loadedAssets;
-
-  // Update loading screen
-  loadingAsset.textContent = "Initializing scene...";
-
-  // Initialize the scene after a small delay for smooth transition
-  setTimeout(() => {
-    initializeScene();
-    setupTheatre();
-    hideLoadingScreen();
-  }, 500);
-}
-
-function initializeScene() {
-  const canvas = document.getElementById("three-canvas") as HTMLCanvasElement;
-
-  const sceneSetup = createSceneSetup(canvas);
-  scene = sceneSetup.scene;
-  camera = sceneSetup.camera;
-  renderer = sceneSetup.renderer;
-
-  setupLighting(scene);
-
-  createSkyboxWithTexture(scene, assets.skybox);
-
-  // Initialize clock for delta time calculations
-  clock = new THREE.Clock();
-
-  fireflySystem = createFireflySystem(scene, camera);
-
-  const campfirePosition = new THREE.Vector3(4, 0.85, 3); // Around infront of the camera
-  const campfireRotation = new THREE.Euler(0, 0, 0);
-  campfireSystem = createCampfireSystem(
-    scene,
-    campfirePosition,
-    campfireRotation
-  );
-
-  const campfireExclusionZone: GrassExclusionZone = {
-    center: new THREE.Vector3(campfirePosition.x, 0, campfirePosition.z),
-    radius: 2.5,
+  mat.onBeforeCompile = (shader) => {
+    shader.uniforms.time = { value: 0 };
+    shader.vertexShader = `uniform float time;\n${shader.vertexShader}`;
+    shader.vertexShader = shader.vertexShader.replace(
+      "#include <begin_vertex>",
+      `#include <begin_vertex>
+      float sway = sin(time * 1.7 + instanceMatrix[3][0] * 0.6 + instanceMatrix[3][2] * 0.4) * 0.12;
+      transformed.x += sway * uv.y;
+      transformed.z += sway * 0.25 * uv.y;`
+    );
+    (mat as THREE.MeshStandardMaterial).userData.shader = shader;
   };
 
-  // Initialize water system first so it can be passed to grass system
-  waterSystem = createWaterSystem(scene, assets.textures.get('waterstripes'));
+  const grass = new THREE.InstancedMesh(blade, mat, count);
+  grass.castShadow = true;
+  grass.receiveShadow = true;
 
-  // Create grass system with water system for foam synchronization
-  grassSystem = createGrassSystem(scene, [campfireExclusionZone], assets.textures.get('water') || null, waterSystem);
-
-
-
-  postProcessing = createPostProcessing(renderer, scene, camera, {
-    strength: 0.12,
-    radius: 0.1,
-    threshold: 0.8,
-  });
-
-  // Camera position is now handled by natural movement system
-  camera.lookAt(0, 0, 0); // Ensure camera looks at center of scene
-
-  // Initialize character system
-
-  const exploreButton = document.getElementById("explore-text");
-  if (exploreButton) {
-    exploreButton.addEventListener("click", () => {
-      console.log("EXPLORE button clicked!");
-      window.open("https://www.youtube.com/watch?v=xvFZjo5PgG0", "_blank");
-    });
+  const dummy = new THREE.Object3D();
+  for (let i = 0; i < count; i++) {
+    const r = Math.sqrt(Math.random()) * 35;
+    const a = Math.random() * Math.PI * 2;
+    const x = Math.cos(a) * r;
+    const z = Math.sin(a) * r;
+    const exclusion = activeMound.position.distanceTo(new THREE.Vector3(x, activeMound.position.y, z));
+    if (exclusion < 2.6) {
+      dummy.position.set(999, -999, 999);
+    } else {
+      dummy.position.set(x, 0, z);
+    }
+    dummy.rotation.y = Math.random() * Math.PI;
+    const s = 0.65 + Math.random() * 0.8;
+    dummy.scale.setScalar(s);
+    dummy.updateMatrix();
+    grass.setMatrixAt(i, dummy.matrix);
   }
 
-  setupMobileCameraPosition();
-
-  setupAudioAndStartButton();
-
-  startAnimationLoop();
+  scene.add(grass);
+  return grass;
 }
 
-function setupTheatre() {
-  // Theatre.js setup
-  
-  
-  const project = getProject("Grass Field with Campfire");
-  const exploreStartSheet = project.sheet("Explore Start");
+const grass = addGrass();
 
-  const craneCamera = exploreStartSheet.object("Camera", {
-    position: {
-      x: camera.position.x,
-      y: camera.position.y,
-      z: camera.position.z,
-    },
-    rotation: {
-      x: camera.rotation.x,
-      y: camera.rotation.y,
-      z: camera.rotation.z,
-    },
-    fov: camera.fov,
-  });
-  craneCamera.onValuesChange((_value) => {
-    // console.log("Camera values changed:", _value);
-    // camera.position.set(_value.position.x, _value.position.y, _value.position.z);
-    // camera.rotation.set(_value.rotation.x, _value.rotation.y, _value.rotation.z);
-    // camera.fov = _value.fov;
-  });
+const cloudMat = new THREE.SpriteMaterial({ color: "#f2f6fb", opacity: 0.92, transparent: true });
+const cloudLeft = new THREE.Sprite(cloudMat.clone());
+cloudLeft.scale.set(5.4, 2.8, 1);
+cloudLeft.position.set(-5.8, 8.5, 0);
+cloudLeft.userData.type = "cloud";
+const cloudRight = new THREE.Sprite(cloudMat.clone());
+cloudRight.scale.set(5.4, 2.8, 1);
+cloudRight.position.set(5.8, 8.5, 0.8);
+cloudRight.userData.type = "cloud";
+scene.add(cloudLeft, cloudRight);
 
+const sun = new THREE.Mesh(
+  new THREE.SphereGeometry(0.9, 24, 24),
+  new THREE.MeshStandardMaterial({ color: "#ffe18a", emissive: "#f7c84f", emissiveIntensity: 1.6 })
+);
+sun.position.set(-10, 11, -10);
+sun.userData.type = "sun";
+scene.add(sun);
+
+const rainCount = 1700;
+const rainPos = new Float32Array(rainCount * 3);
+const rainVel = new Float32Array(rainCount);
+for (let i = 0; i < rainCount; i++) {
+  rainPos[i * 3] = (Math.random() - 0.5) * 4;
+  rainPos[i * 3 + 1] = 4 + Math.random() * 7;
+  rainPos[i * 3 + 2] = (Math.random() - 0.5) * 4;
+  rainVel[i] = 6 + Math.random() * 8;
+}
+const rainGeo = new THREE.BufferGeometry();
+rainGeo.setAttribute("position", new THREE.BufferAttribute(rainPos, 3));
+const rain = new THREE.Points(
+  rainGeo,
+  new THREE.PointsMaterial({ color: "#bddfff", size: 0.08, transparent: true, opacity: 0 })
+);
+scene.add(rain);
+
+const stem = new THREE.Mesh(
+  new THREE.CylinderGeometry(0.07, 0.1, 1.2, 16),
+  new THREE.MeshStandardMaterial({ color: "#6ea557" })
+);
+stem.position.y = 1.05;
+stem.castShadow = true;
+
+const bud = new THREE.Mesh(
+  new THREE.SphereGeometry(0.22, 16, 16),
+  new THREE.MeshStandardMaterial({ color: "#d6c555", roughness: 0.7 })
+);
+bud.position.y = 1.8;
+bud.castShadow = true;
+
+const puff = new THREE.Group();
+for (let i = 0; i < 80; i++) {
+  const p = new THREE.Mesh(
+    new THREE.SphereGeometry(0.04, 8, 8),
+    new THREE.MeshStandardMaterial({ color: "#f6f8ff", emissive: "#ffffff", emissiveIntensity: 0.1 })
+  );
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  const rad = 0.28 + Math.random() * 0.16;
+  p.position.set(
+    Math.sin(phi) * Math.cos(theta) * rad,
+    Math.cos(phi) * rad,
+    Math.sin(phi) * Math.sin(theta) * rad
+  );
+  puff.add(p);
+}
+puff.position.y = 1.9;
+puff.visible = false;
+
+const plant = new THREE.Group();
+plant.add(stem, bud, puff);
+plant.position.copy(activeMound.position);
+plant.visible = false;
+scene.add(plant);
+
+interface FlyingSeed {
+  mesh: THREE.Mesh;
+  velocity: THREE.Vector3;
+  active: boolean;
+  landed: boolean;
 }
 
-function setupAudioAndStartButton() {
-  // Initialize background audio
-  backgroundAudio = new Audio('/sfx/underthesky.mp3');
-  backgroundAudio.loop = true;
-  backgroundAudio.volume = 0.3; // Set to 30% volume
+const seeds: FlyingSeed[] = [];
 
-  // Add event listener for start button
-  startButton.addEventListener('click', () => {
-    // Play audio
-    backgroundAudio.play().catch(error => {
-      console.warn('Audio playback failed:', error);
-    });
+const tmpV3 = new THREE.Vector3();
+let dragging: THREE.Object3D | null = null;
+let growth = 0;
+let rainActive = false;
+let wetness = 0;
+let followedSeed: FlyingSeed | null = null;
 
-    // Immediately hide loading screen and start button
-    loadingScreen.style.display = "none";
-    startButton.style.visibility = "hidden";
-    startButton.style.opacity = "0";
-
-    console.log('Experience started - audio playing');
-  });
-}
-
-function hideLoadingScreen() {
-  // Hide loading elements but keep the dark background
-  const loadingElements = loadingScreen.querySelectorAll('.loading-title, .loading-progress, .loading-text, .loading-asset');
-  loadingElements.forEach(element => {
-    (element as HTMLElement).style.display = 'none';
-  });
-
-  // Show the start button on the same dark background
-  startButton.classList.add("visible");
-}
-
-
-// Natural camera movement parameters
-const cameraMovement = {
-  basePosition: new THREE.Vector3(4, -1, 6), // Original camera position
-  amplitude: {
-    x: 0.34, // Left/right movement amplitude
-    y: 0.1, // Up/down movement amplitude
-    z: 0.1, // Forward/back movement amplitude
-    rotX: 0.2, // Pitch rotation amplitude (up/down)
-    rotY: 0.3  // Yaw rotation amplitude (left/right)
-  },
-  frequency: {
-    x: 0.6, // Left/right movement speed
-    y: 0.2, // Up/down movement speed
-    z: 0.32, // Forward/back movement speed
-    rotX: 0.5, // Pitch rotation speed
-    rotY: 0.2  // Yaw rotation speed
-  },
-  phase: {
-    x: 0, // Phase offset for x movement
-    y: Math.PI / 4, // Phase offset for y movement
-    z: Math.PI / 2, // Phase offset for z movement
-    rotX: Math.PI / 3, // Phase offset for pitch rotation
-    rotY: Math.PI / 6  // Phase offset for yaw rotation
-  }
+const state = {
+  planted: false,
+  watered: false,
+  blooming: false,
+  puff: false,
 };
 
-function updateNaturalCameraMovement(elapsedTime: number) {
-  if (!camera) return;
-
-  // Calculate natural movement using sine waves with different frequencies and phases
-  const xOffset = Math.sin(elapsedTime * cameraMovement.frequency.x + cameraMovement.phase.x) * cameraMovement.amplitude.x;
-  const yOffset = Math.sin(elapsedTime * cameraMovement.frequency.y + cameraMovement.phase.y) * cameraMovement.amplitude.y;
-  const zOffset = Math.sin(elapsedTime * cameraMovement.frequency.z + cameraMovement.phase.z) * cameraMovement.amplitude.z;
-
-  // Calculate natural rotation offsets
-  const rotXOffset = Math.sin(elapsedTime * cameraMovement.frequency.rotX + cameraMovement.phase.rotX) * cameraMovement.amplitude.rotX;
-  const rotYOffset = Math.sin(elapsedTime * cameraMovement.frequency.rotY + cameraMovement.phase.rotY) * cameraMovement.amplitude.rotY;
-
-  // Apply movement to camera position
-  camera.position.set(
-    cameraMovement.basePosition.x + xOffset,
-    cameraMovement.basePosition.y + yOffset,
-    cameraMovement.basePosition.z + zOffset
-  );
-
-  // Apply natural rotation by looking at a slightly offset target
-  // This creates subtle camera rotation effects (pitch and yaw)
-  camera.lookAt(
-    rotYOffset * 3, // Slight horizontal offset for yaw effect
-    rotXOffset * 2, // Slight vertical offset for pitch effect
-    0 // Keep looking at center depth
-  );
+function setStatus(text: string) {
+  statusEl.textContent = text;
 }
 
-function setupMobileCameraPosition() {
-  if (!camera || !campfireSystem) return; // Guard clause for when components aren't initialized yet
+function resetCycle(newMound?: THREE.Object3D) {
+  state.planted = false;
+  state.watered = false;
+  state.blooming = false;
+  state.puff = false;
+  rainActive = false;
+  wetness = 0;
+  growth = 0;
+  followedSeed = null;
+  rain.material.opacity = 0;
+  rainButton.disabled = false;
 
-  const isMobile = window.innerWidth <= 768;
+  if (newMound) activeMound = newMound as THREE.Mesh;
+  plant.visible = false;
+  puff.visible = false;
+  bud.visible = false;
+  stem.scale.y = 0.01;
+  stem.position.y = 0.06;
+  plant.position.copy(activeMound.position);
+  setStatus("Click the mound to plant a seed.");
+}
 
-  if (isMobile) {
-    // Adjust base position for mobile
-    cameraMovement.basePosition.set(5.6, 2.445, 4.25);
+function startRain() {
+  if (!state.planted || rainActive || state.watered) return;
+  rainActive = true;
+  rainButton.disabled = true;
+  setStatus("Rain nourishes the mound. Now click the sun.");
+}
 
-    // Rotate campfire by 45 degrees for mobile view
-    campfireSystem.group.rotation.y = Math.PI / 4; // 45 degrees in radians
+rainButton.addEventListener("click", startRain);
 
-    console.log("Mobile camera position and campfire rotation applied");
+function toNdc(event: PointerEvent) {
+  pointer.x = (event.clientX / window.innerWidth) * 2 - 1;
+  pointer.y = -(event.clientY / window.innerHeight) * 2 + 1;
+}
+
+window.addEventListener("pointerdown", (event) => {
+  toNdc(event);
+  raycaster.setFromCamera(pointer, camera);
+  const hits = raycaster.intersectObjects([activeMound, sun, cloudLeft, cloudRight, ...seeds.map((s) => s.mesh)]);
+  if (!hits.length) return;
+
+  const target = hits[0].object;
+  if (target.userData.type === "cloud") {
+    dragging = target;
+    return;
+  }
+
+  if (target === activeMound && !state.planted) {
+    state.planted = true;
+    plant.visible = true;
+    stem.scale.y = 0.01;
+    stem.position.y = 0.06;
+    bud.visible = false;
+    setStatus("Great. Make it rain (button or drag clouds together).");
+    return;
+  }
+
+  if (target === sun && state.watered && !state.puff) {
+    state.blooming = true;
+    setStatus("Sunlight helps it grow. Wait for bloom...");
+    return;
+  }
+
+  const pickedSeed = seeds.find((s) => s.mesh === target);
+  if (pickedSeed) {
+    followedSeed = pickedSeed;
+    setStatus("Following seed... it will start a new cycle where it lands.");
+  }
+
+  if (target === bud && state.puff) {
+    disperseSeeds();
+  }
+});
+
+window.addEventListener("pointerup", () => {
+  dragging = null;
+});
+
+window.addEventListener("pointermove", (event) => {
+  if (!dragging) return;
+  toNdc(event);
+  raycaster.setFromCamera(pointer, camera);
+  const plane = new THREE.Plane(new THREE.Vector3(0, 1, 0), -8.5);
+  if (raycaster.ray.intersectPlane(plane, tmpV3)) {
+    dragging.position.x = THREE.MathUtils.clamp(tmpV3.x, -10, 10);
+    dragging.position.z = THREE.MathUtils.clamp(tmpV3.z, -3, 3);
+  }
+
+  if (cloudLeft.position.distanceTo(cloudRight.position) < 2.5) {
+    startRain();
+  }
+});
+
+function disperseSeeds() {
+  if (!state.puff) return;
+  state.puff = false;
+  puff.visible = false;
+  bud.visible = false;
+
+  for (let i = 0; i < 36; i++) {
+    const seed = new THREE.Mesh(
+      new THREE.SphereGeometry(0.055, 10, 10),
+      new THREE.MeshStandardMaterial({ color: "#f6f8ff" })
+    );
+    seed.castShadow = true;
+    seed.userData.type = "seed";
+    seed.position.copy(plant.position).add(new THREE.Vector3(0, 1.8, 0));
+    scene.add(seed);
+
+    const vel = new THREE.Vector3(
+      (Math.random() - 0.5) * 1.1,
+      1.4 + Math.random() * 1.7,
+      (Math.random() - 0.5) * 1.1
+    ).add(windDirection.clone().multiplyScalar(0.7 + Math.random() * 0.6));
+
+    seeds.push({ mesh: seed, velocity: vel, active: true, landed: false });
+  }
+  setStatus("Seeds dispersed! Click a seed to follow it.");
+}
+
+function updateRain(dt: number, elapsed: number) {
+  if (rainActive) {
+    wetness = Math.min(1, wetness + dt * 0.25);
+    (rain.material as THREE.PointsMaterial).opacity = Math.min(0.9, wetness);
   } else {
-    // Reset base position for desktop
-    cameraMovement.basePosition.set(4, 1.4, 6);
-    // Reset campfire rotation for desktop
-    campfireSystem.group.rotation.y = 0;
+    (rain.material as THREE.PointsMaterial).opacity = Math.max(0, (rain.material as THREE.PointsMaterial).opacity - dt * 0.8);
+  }
+
+  if (wetness >= 1 && !state.watered) {
+    state.watered = true;
+    rainActive = false;
+    setStatus("Now click the sun to trigger growth.");
+  }
+
+  const positions = rain.geometry.attributes.position.array as Float32Array;
+  for (let i = 0; i < rainCount; i++) {
+    positions[i * 3] = activeMound.position.x + (Math.random() - 0.5) * 3.2 + windDirection.x * Math.sin(elapsed + i) * 0.03;
+    positions[i * 3 + 1] -= rainVel[i] * dt;
+    positions[i * 3 + 2] = activeMound.position.z + (Math.random() - 0.5) * 3.2 + windDirection.z * Math.cos(elapsed + i * 0.4) * 0.03;
+
+    if (positions[i * 3 + 1] < 0.6) {
+      positions[i * 3 + 1] = 6 + Math.random() * 5;
+    }
+  }
+  rain.geometry.attributes.position.needsUpdate = true;
+
+  const dryColor = new THREE.Color("#795641");
+  const wetColor = new THREE.Color("#50392b");
+  (activeMound.material as THREE.MeshStandardMaterial).color.copy(dryColor.clone().lerp(wetColor, wetness));
+  (activeMound.material as THREE.MeshStandardMaterial).roughness = THREE.MathUtils.lerp(0.95, 0.35, wetness);
+}
+
+function updateGrowth(dt: number) {
+  if (!state.blooming) return;
+  growth = Math.min(1, growth + dt * 0.22);
+
+  stem.scale.y = Math.max(0.05, growth);
+  stem.position.y = 0.06 + growth * 0.64;
+  bud.visible = growth > 0.35;
+
+  if (growth > 0.7) {
+    (bud.material as THREE.MeshStandardMaterial).color.set("#ffe77a");
+  }
+
+  if (growth >= 1) {
+    state.blooming = false;
+    state.puff = true;
+    puff.visible = true;
+    bud.visible = true;
+    (bud.material as THREE.MeshStandardMaterial).color.set("#ffffff");
+    setStatus("Dandelion puff ready. Click the flower to disperse seeds.");
   }
 }
 
-function startAnimationLoop() {
-  animate();
+function updateSeeds(dt: number, elapsed: number) {
+  for (const seed of seeds) {
+    if (!seed.active) continue;
+    if (!seed.landed) {
+      seed.velocity.addScaledVector(windDirection, dt * (0.2 + Math.sin(elapsed + seed.mesh.id) * 0.2));
+      seed.velocity.y -= 1.2 * dt;
+      seed.mesh.position.addScaledVector(seed.velocity, dt);
+
+      if (seed.mesh.position.y <= 0.45) {
+        seed.mesh.position.y = 0.45;
+        seed.velocity.set(0, 0, 0);
+        seed.landed = true;
+
+        if (followedSeed === seed) {
+          const newMound = addMound(new THREE.Vector3(seed.mesh.position.x, 0.45, seed.mesh.position.z));
+          resetCycle(newMound);
+          setStatus("A new mound formed. Click it to plant again.");
+        }
+      }
+    }
+  }
 }
 
 function animate() {
   requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.033);
+  const elapsed = clock.elapsedTime;
 
-  clock.getDelta(); // Keep clock running for other systems that might need it
-  const elapsedTime = performance.now() * 0.001; // Convert to seconds
+  const grassShader = (grass.material as THREE.MeshStandardMaterial).userData.shader;
+  if (grassShader) grassShader.uniforms.time.value = elapsed;
 
-  // Update natural camera movement
-  updateNaturalCameraMovement(elapsedTime);
+  cloudLeft.position.x += Math.sin(elapsed * 0.25) * 0.002;
+  cloudRight.position.x -= Math.sin(elapsed * 0.22) * 0.002;
 
-  grassSystem.updateWind(elapsedTime);
-  
-  // Update flower system if it exists
-  if (grassSystem.flowerSystem) {
-    grassSystem.flowerSystem.update(camera, elapsedTime);
-  }
-  
-  // Example: Rotate the wave effect over time
-  // You can adjust this rotation speed or make it interactive
-  const waveRotationSpeed = 0.1; // radians per second
-  grassSystem.setWindParameters({
-    waveRotation: elapsedTime * waveRotationSpeed
-  });
+  updateRain(dt, elapsed);
+  updateGrowth(dt);
+  updateSeeds(dt, elapsed);
 
-  fireflySystem.update(elapsedTime);
+  const target = followedSeed?.mesh.position ?? activeMound.position;
+  const cameraTarget = target.clone().add(new THREE.Vector3(7.5, 5.5, 8));
+  camera.position.lerp(cameraTarget, 0.02);
+  camera.lookAt(target.clone().add(new THREE.Vector3(0, 1.4, 0)));
 
-  campfireSystem.update(elapsedTime);
-
-  waterSystem.update(elapsedTime);
-
-  postProcessing.render();
+  renderer.render(scene, camera);
 }
 
 window.addEventListener("resize", () => {
-  if (camera && renderer && postProcessing) {
-    camera.aspect = window.innerWidth / window.innerHeight;
-    camera.updateProjectionMatrix();
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    postProcessing.resize(window.innerWidth, window.innerHeight);
-
-    setupMobileCameraPosition();
-  }
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
 });
 
-console.log("Starting asset loading...");
-const assetLoader = new AssetLoader(onLoadingProgress, onAssetsLoaded);
-assetLoader.loadAllAssets();
+resetCycle();
+animate();

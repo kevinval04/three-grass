@@ -2,42 +2,18 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Grass Field with Campfire</title>
-    
-    <!-- Open Graph / Facebook -->
-    <meta property="og:type" content="website" />
-    <meta property="og:url" content="https://grass.milan090.me/" />
-    <meta property="og:title" content="Grass Field with Campfire" />
-    <meta property="og:description" content="An immersive 3D experience featuring a beautiful grass field with an interactive campfire. Explore the serene landscape rendered with Three.js." />
-    <meta property="og:image" content="https://grass.milan090.me/og.png" />
-    
-    <!-- Twitter -->
-    <meta property="twitter:card" content="summary_large_image" />
-    <meta property="twitter:url" content="https://grass.milan090.me/" />
-    <meta property="twitter:title" content="Grass Field with Campfire" />
-    <meta property="twitter:description" content="An immersive 3D experience featuring a beautiful grass field with an interactive campfire. Explore the serene landscape rendered with Three.js." />
-    <meta property="twitter:image" content="https://grass.milan090.me/og.png" />
-    <meta property="twitter:creator" content="@itsmilan090" />
-    <style>
-      
-    </style>
+    <title>Life of a Dandelion</title>
   </head>
   <body>
-    <div id="loading-screen">
-      <div class="loading-title">Loading</div>
-      <div class="loading-progress">
-        <div class="loading-progress-bar" id="progress-bar"></div>
-      </div>
-      <div class="loading-text" id="loading-percentage">0%</div>
-      <div class="loading-asset" id="loading-asset">Initializing...</div>
-    </div>
-    
     <div id="app">
       <canvas id="three-canvas"></canvas>
-      <div id="start-button" class="start-button">START EXPERIENCE</div>
-      <div id="explore-text">EXPLORE</div>
+      <div id="hud">
+        <h1>Life of a Dandelion</h1>
+        <p id="status">Click the mound to plant a seed.</p>
+        <button id="rain-button">Make It Rain</button>
+        <p class="hint">Drag clouds together, click sun for growth, click puff to disperse seeds.</p>
+      </div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
